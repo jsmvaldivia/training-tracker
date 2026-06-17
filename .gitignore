@@ -1,5 +1,8 @@
 zig-out/
 .zig-cache/
+
+# Backend-private runtime storage
+api/data.json
 *.bak
 *.db
 *.db-journal

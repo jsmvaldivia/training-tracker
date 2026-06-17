@@ -1,0 +1,41 @@
+openapi: 3.1.0
+info:
+  title: Training Tracker API
+  version: 0.1.0
+  description: >
+    REST API for tracking trainings and certifications. This contract is the
+    source of truth — the Zig backend owns it and the React frontend generates
+    its typed client from it. Resources (Pursuit, Milestone) are added here
+    first, then implemented against this spec.
+servers:
+  - url: http://127.0.0.1:8080
+    description: Local development
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Liveness check
+      responses:
+        "200":
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+
+components:
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
