@@ -1,0 +1,16 @@
+# Spectral ruleset for the Training Tracker OpenAPI contract.
+# Starts from Spectral's built-in OpenAPI rules and trims the ones that don't
+# fit a single-user, local-only API with no external consumers.
+extends: ["spectral:oas"]
+
+rules:
+  # No public consumers — contact/license/terms metadata is noise here.
+  info-contact: off
+  info-license: off
+  license-url: off
+
+  # Keep the contract self-documenting: every operation and schema property
+  # should explain itself, since the frontend codegens types from this.
+  operation-description: warn
+  operation-operationId: error
+  operation-success-response: error
