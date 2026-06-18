@@ -13,6 +13,6 @@ if [[ ! -f "$RULESET" ]]; then
   exit 1
 fi
 
-exec bunx @stoplight/spectral-cli lint "$SPEC" \
+exec bunx @stoplight/spectral-cli@6 lint "$SPEC" \
   --ruleset "$RULESET" \
   --fail-severity warn

@@ -44,16 +44,16 @@ Inspect the repo before asking about the API:
 ```bash
 cat CLAUDE.md 2>/dev/null
 cat api/openapi.yaml 2>/dev/null | head -40
-cat .spectral.yaml 2>/dev/null
+cat api/.spectral.yaml 2>/dev/null
 ls docs/glossary/ 2>/dev/null
-npx @stoplight/spectral-cli --version 2>/dev/null
+ls scripts/validate-oas.sh 2>/dev/null
 ```
 
 Note whether `api/openapi.yaml` exists, which schemas it already has, what the
-glossary documents (Pursuit, Milestone, Status), and whether Spectral is
-configured. If `.spectral.yaml` or Spectral is missing, say so plainly — don't
-pretend the lint gate passed. Summarize what you found in one short paragraph
-before the first API question.
+glossary documents (Pursuit, Milestone, Status), and whether the lint gate is in
+place (`api/.spectral.yaml` + `scripts/validate-oas.sh`). If either is missing,
+say so plainly — don't pretend the lint gate passed. Summarize what you found in
+one short paragraph before the first API question.
 
 ## Step 1 — Scope
 
@@ -83,11 +83,13 @@ For each resource, finish this sequence before starting another:
 5. **Write** — emit the `paths` and `components.schemas` for this resource only.
 6. **Lint:**
    ```bash
-   npx @stoplight/spectral-cli lint api/openapi.yaml --ruleset .spectral.yaml
+   bash scripts/validate-oas.sh
    ```
-   If `.spectral.yaml` is missing, report the lint gate is blocked. If lint
-   fails, report the violation, fix the spec, re-run — don't proceed until it
-   passes or the user accepts the blocker.
+   This is the single source of truth for the lint gate (ruleset, runner, and
+   fail severity all live in the script). If the script or `api/.spectral.yaml`
+   is missing, report the lint gate is blocked. If lint fails, report the
+   violation, fix the spec, re-run — don't proceed until it passes or the user
+   accepts the blocker.
 7. **Confirm** — "`<Resource>` is defined and linted clean. Next resource, or
    review what we have?"
 
