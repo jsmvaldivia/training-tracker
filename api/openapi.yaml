@@ -29,12 +29,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Health"
-        default:
-          description: Unexpected error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
 
 components:
   schemas:
@@ -45,9 +39,3 @@ components:
         status:
           type: string
           enum: [ok]
-    Error:
-      type: object
-      required: [error]
-      properties:
-        error:
-          type: string
