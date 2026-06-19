@@ -38,14 +38,44 @@ See `docs/glossary/` for the full domain model.
 
 **Backend** (`api/`, Zig 0.16.0 — mind version-specific build API):
 ```bash
-zig build         # compile
-zig build run     # start the HTTP server
-zig build test    # unit + acceptance tests — the gate
-zig fmt api/      # format (CI/agents check with: zig fmt --check api/)
+zig build              # compile
+zig build run          # start the HTTP server
+zig build test         # all tests — the pre-commit gate
+zig build test:unit    # fast unit + acceptance tests (no sockets) — the dev loop
+zig build test:http    # HTTP integration tests (real server + sockets)
+zig build test -Dtest-filter="milestone"   # run a subset by name
+zig fmt api/           # format (CI/agents check with: zig fmt --check api/)
 ```
 
-**Frontend** (`web/`): not scaffolded yet. Planned: React on Bun
-(`bun install`, `bun dev`), types codegen'd from `api/openapi.yaml`.
+Test layers: **unit** (`store.zig`, `time_util.zig`) and **acceptance**
+(`pursuits.zig`, `acceptance_milestones.zig`) are socket-free and fast — use
+`test:unit` while iterating. **Integration** (`http_test*.zig`) spins up a real
+server on a background thread; reserve it for the gate. For the tightest loop,
+run a single file directly: `zig test src/store.zig`.
+
+**Frontend** (`web/`, React 19 + Tailwind 3 on Bun):
+```bash
+cd web
+bun install       # install dependencies
+bun dev           # dev server on http://localhost:3000 (proxies /api → :8080)
+bun start         # production mode
+```
+
+**E2E Tests** (`web/e2e/`, Playwright):
+```bash
+cd web
+bun test:e2e          # run all E2E tests headless
+bun test:e2e:ui       # interactive UI mode (recommended for debugging)
+bun test:e2e:headed   # run with visible browser
+bun test:e2e:debug    # step-through debugger
+```
+
+**Test Coverage**: 46 tests validating core user flows:
+- Dashboard view (cards, stats, filters)
+- Timeline view (chronological layout)
+- Filters & view toggle (all/certification/training)
+- Detail panel (open/close, status changes, milestone toggles)
+- Accessibility (keyboard navigation, ARIA, focus management)
 
 API linting via Spectral (`api/.spectral.yaml`): `scripts/validate-oas.sh`
 lints `api/openapi.yaml` (fails on warnings).
@@ -55,6 +85,72 @@ lints `api/openapi.yaml` (fails on warnings).
 - Use Conventional Commits (`feat:`, `fix:`, `chore:`, `refactor:`, …).
 - YOU MUST NOT add `Co-Authored-By: Claude` or any Claude/Anthropic
   attribution line to commit messages.
+
+# Testing
+
+## E2E Tests with Playwright
+
+**Two workflows available:**
+
+### 1. Local Playwright (`@playwright/test`)
+Installed in `web/` via `bun add -d @playwright/test`. Best for:
+- Running full test suite in CI
+- Debugging tests interactively (`bun test:e2e:ui`)
+- Test-driven development
+
+```bash
+cd web
+bun test:e2e           # headless run (CI mode)
+bun test:e2e:ui        # interactive UI (best for debugging)
+bun test:e2e:headed    # visible browser
+bun test:e2e:debug     # step debugger
+```
+
+Test files: `web/e2e/*.spec.ts`  
+Config: `web/playwright.config.ts`
+
+### 2. MCP Playwright (Interactive Browser Automation)
+Claude Code MCP server for ad-hoc browser automation and visual testing.
+
+**Setup** (configured in `~/.claude/settings.json`):
+```json
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"],
+      "env": {}
+    }
+  }
+}
+```
+
+**Activation**: Restart Claude Code after configuration changes.
+
+**Available MCP Tools** (after restart):
+- `playwright_navigate` - navigate to URL
+- `playwright_screenshot` - capture viewport
+- `playwright_click` - click elements
+- `playwright_fill` - fill form fields
+- `playwright_evaluate` - run JavaScript in page context
+- `playwright_select` - select dropdown options
+
+**Use cases**:
+- Visual regression checking (screenshot comparisons)
+- Ad-hoc UI exploration without writing test code
+- Quick validation of UI changes
+- Interactive debugging sessions
+
+**Example workflow**:
+```
+1. Navigate to http://localhost:3000
+2. Screenshot the dashboard
+3. Click on a pursuit card
+4. Screenshot the detail panel
+5. Compare before/after
+```
+
+**Note**: MCP Playwright is for **interactive exploration**. Use `@playwright/test` for **automated regression tests**.
 
 # Environment
 

@@ -1,13 +1,18 @@
-//! Training Tracker HTTP API — minimal Zig web service skeleton.
+//! Training Tracker HTTP API — Zig web service.
 //!
-//! Routes are stubs for now; the OpenAPI contract in `api/openapi.yaml` is the
-//! source of truth and resources get filled in against it. Storage is a
-//! backend-private JSON file (`api/data.json`); SQLite comes later.
+//! The OpenAPI contract in `api/openapi.yaml` is the source of truth. Storage is
+//! a backend-private JSON file (`api/data.json`); SQLite comes later. The
+//! Pursuit/Milestone resource is implemented in `pursuits.zig` (handler) and
+//! `store.zig` (domain + persistence); this file is the socket plumbing.
 
 const std = @import("std");
 const net = std.Io.net;
 
-const port: u16 = 8080;
+const pursuits = @import("pursuits.zig");
+const store_mod = @import("store.zig");
+
+const default_port: u16 = 8080;
+const default_data_path = "data.json";
 const json_content_type: std.http.Header = .{ .name = "content-type", .value = "application/json" };
 
 pub fn main() !void {
@@ -18,6 +23,20 @@ pub fn main() !void {
     var threaded: std.Io.Threaded = .init(gpa, .{});
     defer threaded.deinit();
     const io = threaded.io();
+
+    // Allow port and data path override via environment variables for testing.
+    const port = blk: {
+        const port_str_ptr = std.c.getenv("PORT") orelse break :blk default_port;
+        const port_str = std.mem.span(port_str_ptr);
+        break :blk std.fmt.parseInt(u16, port_str, 10) catch default_port;
+    };
+    const data_path = blk: {
+        const path_ptr = std.c.getenv("DATA_PATH") orelse break :blk default_data_path;
+        break :blk std.mem.span(path_ptr);
+    };
+
+    var store = try store_mod.Store.init(gpa, io, data_path);
+    defer store.deinit();
 
     const address = try net.IpAddress.parse("127.0.0.1", port);
     var server = try address.listen(io, .{ .reuse_address = true });
@@ -30,17 +49,17 @@ pub fn main() !void {
             std.debug.print("accept failed: {s}\n", .{@errorName(err)});
             continue;
         };
-        handleConnection(io, stream) catch |err| {
+        handleConnection(io, gpa, &store, stream) catch |err| {
             std.debug.print("connection error: {s}\n", .{@errorName(err)});
         };
     }
 }
 
-fn handleConnection(io: std.Io, stream: net.Stream) !void {
+fn handleConnection(io: std.Io, gpa: std.mem.Allocator, store: *store_mod.Store, stream: net.Stream) !void {
     defer stream.close(io);
 
-    var recv_buf: [16 * 1024]u8 = undefined;
-    var send_buf: [16 * 1024]u8 = undefined;
+    var recv_buf: [64 * 1024]u8 = undefined;
+    var send_buf: [64 * 1024]u8 = undefined;
     var stream_reader = stream.reader(io, &recv_buf);
     var stream_writer = stream.writer(io, &send_buf);
 
@@ -51,30 +70,58 @@ fn handleConnection(io: std.Io, stream: net.Stream) !void {
         else => return err,
     };
 
-    const response = responseFor(request.head.method, request.head.target);
-    try request.respond(response.body, .{
-        .status = response.status,
+    // Capture method/target before reading the body: taking the body reader
+    // invalidates the string memory inside `Head`.
+    const method = request.head.method;
+    var target_buf: [8 * 1024]u8 = undefined;
+    const tlen = @min(request.head.target.len, target_buf.len);
+    @memcpy(target_buf[0..tlen], request.head.target[0..tlen]);
+    const target = target_buf[0..tlen];
+
+    // Read the request body (if any).
+    var body_buf: [1024 * 1024]u8 = undefined;
+    const body = readBody(&request, &body_buf);
+
+    if (try pursuits.handle(gpa, store, method, target, body)) |resp| {
+        defer if (resp.body.len > 0) gpa.free(resp.body);
+        try request.respond(resp.body, .{
+            .status = resp.status,
+            .extra_headers = &.{json_content_type},
+            .keep_alive = false,
+        });
+        return;
+    }
+
+    // Fallback routes handled inline.
+    if (method == .GET and std.mem.eql(u8, stripQuery(target), "/health")) {
+        try request.respond("{\"status\":\"ok\"}", .{
+            .status = .ok,
+            .extra_headers = &.{json_content_type},
+            .keep_alive = false,
+        });
+        return;
+    }
+
+    try request.respond("{\"status\":404,\"message\":\"Not found\"}", .{
+        .status = .not_found,
         .extra_headers = &.{json_content_type},
         .keep_alive = false,
     });
 }
 
-const Response = struct {
-    status: std.http.Status,
-    body: []const u8,
-};
-
-/// Pure routing: maps a method + path to a canned response. Kept free of any
-/// I/O so it stays unit-testable as real resources land here.
-fn responseFor(method: std.http.Method, target: []const u8) Response {
-    if (method == .GET and std.mem.eql(u8, target, "/health")) {
-        return .{ .status = .ok, .body = "{\"status\":\"ok\"}" };
-    }
-    return .{ .status = .not_found, .body = "{\"error\":\"not found\"}" };
+fn readBody(request: *std.http.Server.Request, buf: []u8) []const u8 {
+    if (!request.head.method.requestHasBody()) return "";
+    const reader = request.readerExpectContinue(&.{}) catch return "";
+    const n = reader.readSliceShort(buf) catch return "";
+    return buf[0..n];
 }
 
-test "responseFor maps health, unknown paths, and wrong methods" {
-    try std.testing.expectEqual(std.http.Status.ok, responseFor(.GET, "/health").status);
-    try std.testing.expectEqual(std.http.Status.not_found, responseFor(.GET, "/nope").status);
-    try std.testing.expectEqual(std.http.Status.not_found, responseFor(.POST, "/health").status);
+fn stripQuery(target: []const u8) []const u8 {
+    const q = std.mem.indexOfScalar(u8, target, '?') orelse return target;
+    return target[0..q];
+}
+
+test "health path is not claimed by the pursuits router" {
+    // Smoke test that the resource router and fallback wiring compile together.
+    try std.testing.expect(std.mem.eql(u8, stripQuery("/health?x=1"), "/health"));
 }

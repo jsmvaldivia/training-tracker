@@ -14,6 +14,10 @@ servers:
 tags:
   - name: system
     description: Service-level operations (liveness, diagnostics).
+  - name: pursuits
+    description: Pursuit resource (trainings and certifications).
+  - name: milestones
+    description: Milestone resource (nested under pursuits).
 
 paths:
   /health:
@@ -30,6 +34,295 @@ paths:
               schema:
                 $ref: "#/components/schemas/Health"
 
+  /pursuits:
+    get:
+      operationId: listPursuits
+      summary: List all pursuits
+      description: >
+        Returns a paginated list of pursuits, optionally filtered by type.
+        Supports filtering by certification or training type via query parameter.
+      tags: [pursuits]
+      parameters:
+        - name: type
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/PursuitType"
+          description: Filter pursuits by type (certification or training).
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+          description: Maximum number of pursuits to return (default 50, max 100).
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Number of pursuits to skip for pagination (default 0).
+      responses:
+        "200":
+          description: Paginated list of pursuits
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PursuitsListResponse"
+
+    post:
+      operationId: createPursuit
+      summary: Create a new pursuit
+      description: >
+        Creates a new pursuit with the provided details. The server assigns
+        a unique ID and auto-sets completed_at when status is 'completed'.
+        Milestones can be created inline or added later.
+      tags: [pursuits]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PursuitCreate"
+      responses:
+        "201":
+          description: Pursuit created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pursuit"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /pursuits/{id}:
+    get:
+      operationId: getPursuit
+      summary: Get a single pursuit
+      description: >
+        Returns a single pursuit by ID, including all nested milestones.
+      tags: [pursuits]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique pursuit identifier.
+      responses:
+        "200":
+          description: Pursuit found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pursuit"
+        "404":
+          description: Pursuit not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    patch:
+      operationId: updatePursuit
+      summary: Update a pursuit
+      description: >
+        Partially updates a pursuit. All fields are optional. The server
+        automatically sets completed_at when status changes to 'completed'.
+        Read-only fields (id, completed_at) are ignored if sent.
+      tags: [pursuits]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique pursuit identifier.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PursuitUpdate"
+      responses:
+        "200":
+          description: Pursuit updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pursuit"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Pursuit not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    delete:
+      operationId: deletePursuit
+      summary: Delete a pursuit
+      description: >
+        Permanently deletes a pursuit and all its milestones.
+      tags: [pursuits]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique pursuit identifier.
+      responses:
+        "204":
+          description: Pursuit deleted successfully
+        "404":
+          description: Pursuit not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /pursuits/{id}/milestones:
+    post:
+      operationId: createMilestone
+      summary: Add a milestone to a pursuit
+      description: >
+        Creates a new milestone for the specified pursuit. The server assigns
+        a unique ID and auto-sets achieved_at when state is 'achieved'.
+      tags: [milestones]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique pursuit identifier.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MilestoneCreate"
+      responses:
+        "201":
+          description: Milestone created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Milestone"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Pursuit not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /pursuits/{id}/milestones/{milestoneId}:
+    patch:
+      operationId: updateMilestone
+      summary: Update a milestone
+      description: >
+        Updates a milestone's state or date. The server automatically sets
+        achieved_at when state changes to 'achieved'. Toggling state from
+        'achieved' to 'pending' clears achieved_at.
+      tags: [milestones]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique pursuit identifier.
+        - name: milestoneId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique milestone identifier.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Milestone name or description.
+                date:
+                  type: string
+                  format: date-time
+                  description: Target date for this milestone (ISO 8601).
+                state:
+                  $ref: "#/components/schemas/MilestoneState"
+                  description: Milestone state.
+      responses:
+        "200":
+          description: Milestone updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Milestone"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Pursuit or milestone not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    delete:
+      operationId: deleteMilestone
+      summary: Delete a milestone
+      description: >
+        Permanently removes a milestone from a pursuit.
+      tags: [milestones]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique pursuit identifier.
+        - name: milestoneId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique milestone identifier.
+      responses:
+        "204":
+          description: Milestone deleted successfully
+        "404":
+          description: Pursuit or milestone not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
 components:
   schemas:
     Health:
@@ -39,3 +332,267 @@ components:
         status:
           type: string
           enum: [ok]
+
+    Status:
+      type: string
+      enum: [planned, in_progress, completed, expired]
+      description: >
+        Pursuit lifecycle status. Transitions: planned → in_progress → completed.
+        Certifications may also transition to expired after their validity period.
+
+    PursuitType:
+      type: string
+      enum: [certification, training]
+      description: Type of pursuit (training or certification).
+
+    MilestoneState:
+      type: string
+      enum: [pending, achieved]
+      description: Milestone completion state.
+
+    MilestoneCreate:
+      type: object
+      required: [name, date]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Milestone name or description.
+          example: "Complete Cloud Practitioner exam"
+        date:
+          type: string
+          format: date-time
+          description: Target date for this milestone (ISO 8601).
+          example: "2026-07-15T00:00:00Z"
+        state:
+          $ref: "#/components/schemas/MilestoneState"
+          default: pending
+          description: Initial state (defaults to 'pending' if not provided).
+
+    Milestone:
+      type: object
+      required: [id, name, date, state]
+      properties:
+        id:
+          type: string
+          pattern: "^[a-zA-Z0-9_-]+$"
+          description: Unique milestone identifier (server-assigned).
+          example: "m_abc123"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Milestone name or description.
+          example: "Complete Cloud Practitioner exam"
+        date:
+          type: string
+          format: date-time
+          description: Target date for this milestone (ISO 8601).
+          example: "2026-07-15T00:00:00Z"
+        state:
+          $ref: "#/components/schemas/MilestoneState"
+        achieved_at:
+          type: string
+          format: date-time
+          description: >
+            Timestamp when milestone was achieved (ISO 8601). Auto-set by server
+            when state changes to 'achieved'. Read-only.
+          example: "2026-07-10T14:30:00Z"
+
+    Pursuit:
+      type: object
+      required: [id, name, type, status, target_date, started_at, tags, milestones]
+      properties:
+        id:
+          type: string
+          pattern: "^[a-zA-Z0-9_-]+$"
+          description: Unique pursuit identifier (server-assigned).
+          example: "p_xyz789"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Pursuit name.
+          example: "AWS Certified Solutions Architect"
+        type:
+          $ref: "#/components/schemas/PursuitType"
+        status:
+          $ref: "#/components/schemas/Status"
+        description:
+          type: string
+          maxLength: 2000
+          description: Optional notes or description.
+          example: "Associate level certification for AWS cloud architecture."
+        target_date:
+          type: string
+          format: date-time
+          description: Target completion date (ISO 8601).
+          example: "2026-12-31T23:59:59Z"
+        started_at:
+          type: string
+          format: date-time
+          description: Date when pursuit was started (ISO 8601).
+          example: "2026-06-01T00:00:00Z"
+        completed_at:
+          type: string
+          format: date-time
+          description: >
+            Completion timestamp (ISO 8601). Auto-set by server when status
+            changes to 'completed'. Read-only.
+          example: "2026-12-15T10:30:00Z"
+        expires_at:
+          type: string
+          format: date-time
+          description: >
+            Expiration date for certifications (ISO 8601). Optional, typically
+            only set for type=certification.
+          example: "2029-12-15T00:00:00Z"
+        tags:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 50
+          maxItems: 20
+          description: Tags for categorization and filtering.
+          example: ["cloud", "aws", "architecture"]
+        milestones:
+          type: array
+          items:
+            $ref: "#/components/schemas/Milestone"
+          maxItems: 50
+          description: Milestones associated with this pursuit.
+
+    PursuitCreate:
+      type: object
+      required: [name, type, target_date, started_at]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Pursuit name.
+          example: "AWS Certified Solutions Architect"
+        type:
+          $ref: "#/components/schemas/PursuitType"
+        status:
+          $ref: "#/components/schemas/Status"
+          default: planned
+          description: Initial status (defaults to 'planned' if not provided).
+        description:
+          type: string
+          maxLength: 2000
+          description: Optional notes or description.
+          example: "Associate level certification for AWS cloud architecture."
+        target_date:
+          type: string
+          format: date-time
+          description: Target completion date (ISO 8601).
+          example: "2026-12-31T23:59:59Z"
+        started_at:
+          type: string
+          format: date-time
+          description: Date when pursuit was started (ISO 8601).
+          example: "2026-06-01T00:00:00Z"
+        expires_at:
+          type: string
+          format: date-time
+          description: >
+            Expiration date for certifications (ISO 8601). Optional, typically
+            only set for type=certification.
+          example: "2029-12-15T00:00:00Z"
+        tags:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 50
+          maxItems: 20
+          default: []
+          description: Tags for categorization and filtering.
+          example: ["cloud", "aws", "architecture"]
+        milestones:
+          type: array
+          items:
+            $ref: "#/components/schemas/MilestoneCreate"
+          maxItems: 50
+          default: []
+          description: Initial milestones to create with this pursuit.
+
+    PursuitUpdate:
+      type: object
+      description: >
+        Partial update for a pursuit. All fields optional. Server auto-sets
+        completed_at when status changes to 'completed'.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        type:
+          $ref: "#/components/schemas/PursuitType"
+        status:
+          $ref: "#/components/schemas/Status"
+        description:
+          type: string
+          maxLength: 2000
+        target_date:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        tags:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 50
+          maxItems: 20
+
+    PursuitsListResponse:
+      type: object
+      required: [data, total, limit, offset]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Pursuit"
+          description: Array of pursuits for the current page.
+        total:
+          type: integer
+          minimum: 0
+          description: Total number of pursuits matching the filter.
+          example: 42
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Maximum number of items returned in this response.
+          example: 50
+        offset:
+          type: integer
+          minimum: 0
+          description: Number of items skipped before this page.
+          example: 0
+
+    Error:
+      type: object
+      required: [status, message]
+      properties:
+        status:
+          type: integer
+          description: HTTP status code.
+          example: 404
+        message:
+          type: string
+          description: Human-readable error message.
+          example: "Pursuit not found"
+        details:
+          type: string
+          description: Optional detailed error information.
+          example: "No pursuit exists with id 'p_invalid123'"
