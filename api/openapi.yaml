@@ -7,6 +7,23 @@ info:
     source of truth — the Zig backend owns it and the React frontend generates
     its typed client from it. Resources (Pursuit, Milestone) are added here
     first, then implemented against this spec.
+
+
+    ## Conventions
+
+
+    - **IDs** are server-assigned and monotonic, prefixed by resource type:
+      pursuits are `p_<n>` and milestones are `m_<n>`. The counter is shared, so
+      a pursuit created before its first milestone is `p_1` and that milestone is
+      `m_2`.
+
+    - **Timestamps** are ISO 8601 in UTC (e.g. `2026-06-19T14:30:00Z`).
+
+    - **Read-only fields** (`id`, `completed_at`, `achieved_at`) are assigned by
+      the server and ignored if sent in a request body.
+
+    - **Errors** share a single `Error` shape: an HTTP `status`, a human-readable
+      `message`, and optional `details`.
 servers:
   - url: http://127.0.0.1:8080
     description: Local development
@@ -33,6 +50,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Health"
+              example:
+                status: ok
 
   /pursuits:
     get:
@@ -49,6 +68,7 @@ paths:
           schema:
             $ref: "#/components/schemas/PursuitType"
           description: Filter pursuits by type (certification or training).
+          example: certification
         - name: limit
           in: query
           required: false
@@ -58,6 +78,7 @@ paths:
             maximum: 100
             default: 50
           description: Maximum number of pursuits to return (default 50, max 100).
+          example: 50
         - name: offset
           in: query
           required: false
@@ -66,6 +87,7 @@ paths:
             minimum: 0
             default: 0
           description: Number of pursuits to skip for pagination (default 0).
+          example: 0
       responses:
         "200":
           description: Paginated list of pursuits
@@ -73,6 +95,34 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PursuitsListResponse"
+              example:
+                data:
+                  - id: p_1
+                    name: AWS Certified Solutions Architect
+                    type: certification
+                    status: in_progress
+                    description: Associate level certification for AWS cloud architecture.
+                    target_date: "2026-12-31T23:59:59Z"
+                    started_at: "2026-06-01T00:00:00Z"
+                    expires_at: "2029-12-15T00:00:00Z"
+                    tags: [cloud, aws, architecture]
+                    milestones:
+                      - id: m_2
+                        name: Complete Cloud Practitioner exam
+                        date: "2026-07-15T00:00:00Z"
+                        state: achieved
+                        achieved_at: "2026-07-10T14:30:00Z"
+                  - id: p_3
+                    name: Advanced TypeScript
+                    type: training
+                    status: planned
+                    target_date: "2026-09-30T00:00:00Z"
+                    started_at: "2026-06-15T00:00:00Z"
+                    tags: [frontend, typescript]
+                    milestones: []
+                total: 2
+                limit: 50
+                offset: 0
 
     post:
       operationId: createPursuit
@@ -88,6 +138,28 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/PursuitCreate"
+            examples:
+              minimal:
+                summary: Minimal — only required fields
+                value:
+                  name: Advanced TypeScript
+                  type: training
+                  target_date: "2026-09-30T00:00:00Z"
+                  started_at: "2026-06-15T00:00:00Z"
+              full:
+                summary: Full — certification with tags and inline milestones
+                value:
+                  name: AWS Certified Solutions Architect
+                  type: certification
+                  status: in_progress
+                  description: Associate level certification for AWS cloud architecture.
+                  target_date: "2026-12-31T23:59:59Z"
+                  started_at: "2026-06-01T00:00:00Z"
+                  expires_at: "2029-12-15T00:00:00Z"
+                  tags: [cloud, aws, architecture]
+                  milestones:
+                    - name: Complete Cloud Practitioner exam
+                      date: "2026-07-15T00:00:00Z"
       responses:
         "201":
           description: Pursuit created successfully
@@ -95,12 +167,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Pursuit"
+              example:
+                id: p_1
+                name: AWS Certified Solutions Architect
+                type: certification
+                status: in_progress
+                description: Associate level certification for AWS cloud architecture.
+                target_date: "2026-12-31T23:59:59Z"
+                started_at: "2026-06-01T00:00:00Z"
+                expires_at: "2029-12-15T00:00:00Z"
+                tags: [cloud, aws, architecture]
+                milestones:
+                  - id: m_2
+                    name: Complete Cloud Practitioner exam
+                    date: "2026-07-15T00:00:00Z"
+                    state: pending
         "400":
           description: Invalid request body
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+              example:
+                status: 400
+                message: Invalid request body
+                details: "Field 'name' is required"
 
   /pursuits/{id}:
     get:
@@ -116,6 +207,7 @@ paths:
           schema:
             type: string
           description: Unique pursuit identifier.
+          example: p_1
       responses:
         "200":
           description: Pursuit found
@@ -123,12 +215,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Pursuit"
+              example:
+                id: p_1
+                name: AWS Certified Solutions Architect
+                type: certification
+                status: in_progress
+                description: Associate level certification for AWS cloud architecture.
+                target_date: "2026-12-31T23:59:59Z"
+                started_at: "2026-06-01T00:00:00Z"
+                expires_at: "2029-12-15T00:00:00Z"
+                tags: [cloud, aws, architecture]
+                milestones:
+                  - id: m_2
+                    name: Complete Cloud Practitioner exam
+                    date: "2026-07-15T00:00:00Z"
+                    state: achieved
+                    achieved_at: "2026-07-10T14:30:00Z"
         "404":
           description: Pursuit not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+              example:
+                status: 404
+                message: Pursuit not found
 
     patch:
       operationId: updatePursuit
@@ -145,12 +256,23 @@ paths:
           schema:
             type: string
           description: Unique pursuit identifier.
+          example: p_1
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/PursuitUpdate"
+            examples:
+              markComplete:
+                summary: Mark as completed (server stamps completed_at)
+                value:
+                  status: completed
+              rename:
+                summary: Rename and retag
+                value:
+                  name: AWS Certified Solutions Architect — Associate
+                  tags: [cloud, aws, architecture, exam-2026]
       responses:
         "200":
           description: Pursuit updated successfully
@@ -158,18 +280,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Pursuit"
+              example:
+                id: p_1
+                name: AWS Certified Solutions Architect
+                type: certification
+                status: completed
+                description: Associate level certification for AWS cloud architecture.
+                target_date: "2026-12-31T23:59:59Z"
+                started_at: "2026-06-01T00:00:00Z"
+                completed_at: "2026-12-15T10:30:00Z"
+                expires_at: "2029-12-15T00:00:00Z"
+                tags: [cloud, aws, architecture]
+                milestones: []
         "400":
           description: Invalid request body
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+              example:
+                status: 400
+                message: Invalid request body
+                details: "Field 'status' must be one of: planned, in_progress, completed, expired"
         "404":
           description: Pursuit not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+              example:
+                status: 404
+                message: Pursuit not found
 
     delete:
       operationId: deletePursuit
@@ -184,6 +325,7 @@ paths:
           schema:
             type: string
           description: Unique pursuit identifier.
+          example: p_1
       responses:
         "204":
           description: Pursuit deleted successfully
@@ -193,6 +335,9 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+              example:
+                status: 404
+                message: Pursuit not found
 
   /pursuits/{id}/milestones:
     post:
@@ -209,12 +354,16 @@ paths:
           schema:
             type: string
           description: Unique pursuit identifier.
+          example: p_1
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/MilestoneCreate"
+            example:
+              name: Complete Cloud Practitioner exam
+              date: "2026-07-15T00:00:00Z"
       responses:
         "201":
           description: Milestone created successfully
@@ -222,18 +371,30 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Milestone"
+              example:
+                id: m_2
+                name: Complete Cloud Practitioner exam
+                date: "2026-07-15T00:00:00Z"
+                state: pending
         "400":
           description: Invalid request body
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+              example:
+                status: 400
+                message: Invalid request body
+                details: "Field 'date' is required"
         "404":
           description: Pursuit not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+              example:
+                status: 404
+                message: Pursuit not found
 
   /pursuits/{id}/milestones/{milestoneId}:
     patch:
@@ -251,29 +412,29 @@ paths:
           schema:
             type: string
           description: Unique pursuit identifier.
+          example: p_1
         - name: milestoneId
           in: path
           required: true
           schema:
             type: string
           description: Unique milestone identifier.
+          example: m_2
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                name:
-                  type: string
-                  description: Milestone name or description.
-                date:
-                  type: string
-                  format: date-time
-                  description: Target date for this milestone (ISO 8601).
-                state:
-                  $ref: "#/components/schemas/MilestoneState"
-                  description: Milestone state.
+              $ref: "#/components/schemas/MilestoneUpdate"
+            examples:
+              markAchieved:
+                summary: Mark as achieved (server stamps achieved_at)
+                value:
+                  state: achieved
+              reschedule:
+                summary: Move the target date
+                value:
+                  date: "2026-08-01T00:00:00Z"
       responses:
         "200":
           description: Milestone updated successfully
@@ -281,19 +442,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Milestone"
+              example:
+                id: m_2
+                name: Complete Cloud Practitioner exam
+                date: "2026-07-15T00:00:00Z"
+                state: achieved
+                achieved_at: "2026-07-10T14:30:00Z"
         "400":
           description: Invalid request body
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+              example:
+                status: 400
+                message: Invalid request body
+                details: "Field 'state' must be one of: pending, achieved"
         "404":
           description: Pursuit or milestone not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-
+              example:
+                status: 404
+                message: Milestone not found
     delete:
       operationId: deleteMilestone
       summary: Delete a milestone
@@ -307,12 +480,14 @@ paths:
           schema:
             type: string
           description: Unique pursuit identifier.
+          example: p_1
         - name: milestoneId
           in: path
           required: true
           schema:
             type: string
           description: Unique milestone identifier.
+          example: m_2
       responses:
         "204":
           description: Milestone deleted successfully
@@ -322,6 +497,9 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+              example:
+                status: 404
+                message: Milestone not found
 
 components:
   schemas:
@@ -332,6 +510,8 @@ components:
         status:
           type: string
           enum: [ok]
+          description: Liveness indicator; always 'ok' when the service responds.
+          example: ok
 
     Status:
       type: string
@@ -369,6 +549,33 @@ components:
           $ref: "#/components/schemas/MilestoneState"
           default: pending
           description: Initial state (defaults to 'pending' if not provided).
+      example:
+        name: Complete Cloud Practitioner exam
+        date: "2026-07-15T00:00:00Z"
+
+    MilestoneUpdate:
+      type: object
+      description: >
+        Partial update for a milestone. All fields optional. The server auto-sets
+        achieved_at when state changes to 'achieved', and clears it when state
+        changes back to 'pending'.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Milestone name or description.
+          example: "Complete Cloud Practitioner exam"
+        date:
+          type: string
+          format: date-time
+          description: Target date for this milestone (ISO 8601).
+          example: "2026-07-15T00:00:00Z"
+        state:
+          $ref: "#/components/schemas/MilestoneState"
+          description: New milestone state.
+      example:
+        state: achieved
 
     Milestone:
       type: object
@@ -378,7 +585,7 @@ components:
           type: string
           pattern: "^[a-zA-Z0-9_-]+$"
           description: Unique milestone identifier (server-assigned).
-          example: "m_abc123"
+          example: "m_2"
         name:
           type: string
           minLength: 1
@@ -399,6 +606,12 @@ components:
             Timestamp when milestone was achieved (ISO 8601). Auto-set by server
             when state changes to 'achieved'. Read-only.
           example: "2026-07-10T14:30:00Z"
+      example:
+        id: m_2
+        name: Complete Cloud Practitioner exam
+        date: "2026-07-15T00:00:00Z"
+        state: achieved
+        achieved_at: "2026-07-10T14:30:00Z"
 
     Pursuit:
       type: object
@@ -408,7 +621,7 @@ components:
           type: string
           pattern: "^[a-zA-Z0-9_-]+$"
           description: Unique pursuit identifier (server-assigned).
-          example: "p_xyz789"
+          example: "p_1"
         name:
           type: string
           minLength: 1
@@ -463,6 +676,22 @@ components:
             $ref: "#/components/schemas/Milestone"
           maxItems: 50
           description: Milestones associated with this pursuit.
+      example:
+        id: p_1
+        name: AWS Certified Solutions Architect
+        type: certification
+        status: in_progress
+        description: Associate level certification for AWS cloud architecture.
+        target_date: "2026-12-31T23:59:59Z"
+        started_at: "2026-06-01T00:00:00Z"
+        expires_at: "2029-12-15T00:00:00Z"
+        tags: [cloud, aws, architecture]
+        milestones:
+          - id: m_2
+            name: Complete Cloud Practitioner exam
+            date: "2026-07-15T00:00:00Z"
+            state: achieved
+            achieved_at: "2026-07-10T14:30:00Z"
 
     PursuitCreate:
       type: object
@@ -519,6 +748,15 @@ components:
           maxItems: 50
           default: []
           description: Initial milestones to create with this pursuit.
+      example:
+        name: AWS Certified Solutions Architect
+        type: certification
+        target_date: "2026-12-31T23:59:59Z"
+        started_at: "2026-06-01T00:00:00Z"
+        tags: [cloud, aws, architecture]
+        milestones:
+          - name: Complete Cloud Practitioner exam
+            date: "2026-07-15T00:00:00Z"
 
     PursuitUpdate:
       type: object
@@ -553,6 +791,8 @@ components:
             minLength: 1
             maxLength: 50
           maxItems: 20
+      example:
+        status: completed
 
     PursuitsListResponse:
       type: object
@@ -595,4 +835,7 @@ components:
         details:
           type: string
           description: Optional detailed error information.
-          example: "No pursuit exists with id 'p_invalid123'"
+          example: "No pursuit exists with id 'p_1'"
+      example:
+        status: 404
+        message: Pursuit not found
