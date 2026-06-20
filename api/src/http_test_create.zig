@@ -57,11 +57,26 @@ const ServerContext = struct {
 
     fn deinit(self: *ServerContext) void {
         self.should_stop.store(true, .monotonic);
+        // A blocking accept() is not interrupted by the flag, so make one
+        // throwaway connection to wake it; the loop then observes should_stop.
+        self.wakeAccept();
         if (self.thread) |t| t.join();
         self.server.deinit(self.io);
         self.store.deinit();
         std.Io.Dir.cwd().deleteFile(self.io, self.data_path) catch {};
         self.allocator.destroy(self);
+    }
+
+    /// Open and immediately close one TCP connection so the server thread's
+    /// blocking accept() returns and the run loop can re-check should_stop.
+    fn wakeAccept(self: *ServerContext) void {
+        var threaded: std.Io.Threaded = .init(self.allocator, .{});
+        defer threaded.deinit();
+        const io = threaded.io();
+
+        const address = net.IpAddress.parse("127.0.0.1", self.port) catch return;
+        var stream = address.connect(io, .{ .mode = .stream }) catch return;
+        stream.close(io);
     }
 
     fn run(self: *ServerContext) void {
@@ -211,7 +226,7 @@ const TestServer = struct {
 
         var body_buf: [1024 * 1024]u8 = undefined;
         const reader = response.reader(&body_buf);
-        const response_body = try reader.readAlloc(allocator, 1024 * 1024);
+        const response_body = try reader.allocRemaining(allocator, std.Io.Limit.limited(1024 * 1024));
 
         return .{
             .status = response.head.status,

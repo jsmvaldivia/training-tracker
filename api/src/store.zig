@@ -17,6 +17,8 @@ const Value = json.Value;
 const ObjectMap = json.ObjectMap;
 const Array = json.Array;
 
+const log = std.log.scoped(.store);
+
 pub const max_name_len = 200;
 pub const max_description_len = 2000;
 pub const max_tag_len = 50;
@@ -54,8 +56,12 @@ pub const Store = struct {
         errdefer arena.deinit();
 
         const a = arena.allocator();
+        var loaded_from_file = true;
         const root = readFile(a, io, path) catch |err| switch (err) {
-            error.FileNotFound => emptyRoot(a),
+            error.FileNotFound => blk: {
+                loaded_from_file = false;
+                break :blk emptyRoot(a);
+            },
             else => return err,
         };
 
@@ -67,6 +73,16 @@ pub const Store = struct {
             }
             break :blk 0;
         };
+
+        if (loaded_from_file) {
+            const count = if (root == .object)
+                if (root.object.get("pursuits")) |p| (if (p == .array) p.array.items.len else 0) else 0
+            else
+                0;
+            log.info("loaded {d} pursuit(s) from {s}", .{ count, path });
+        } else {
+            log.info("no data file at {s}; starting with an empty store", .{path});
+        }
 
         return .{
             .gpa = gpa,

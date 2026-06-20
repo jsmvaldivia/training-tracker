@@ -18,6 +18,15 @@ const json = std.json;
 const Allocator = std.mem.Allocator;
 const Value = json.Value;
 
+const log = std.log.scoped(.handler);
+
+/// Flush the store to disk, logging (rather than swallowing) any failure. The
+/// mutation already succeeded in memory and the response is sent regardless, so
+/// a write failure must not be silent — it means the change was not persisted.
+fn persist(s: *Store) void {
+    s.flush() catch |err| log.err("failed to persist store to disk: {s}", .{@errorName(err)});
+}
+
 pub const Response = struct {
     status: std.http.Status,
     /// JSON body, allocated with the handler's gpa. Empty for 204.
@@ -120,7 +129,7 @@ fn createPursuit(gpa: Allocator, s: *Store, body: []const u8) Allocator.Error!Re
     defer parsed.deinit();
 
     const created = s.create(parsed.value) catch |err| return mapStoreError(gpa, err);
-    s.flush() catch {};
+    persist(s);
     return jsonResponse(gpa, .created, created);
 }
 
@@ -135,13 +144,13 @@ fn updatePursuit(gpa: Allocator, s: *Store, id: []const u8, body: []const u8) Al
     defer parsed.deinit();
 
     const updated = s.update(id, parsed.value) catch |err| return mapStoreError(gpa, err);
-    s.flush() catch {};
+    persist(s);
     return jsonResponse(gpa, .ok, updated);
 }
 
 fn deletePursuit(gpa: Allocator, s: *Store, id: []const u8) Allocator.Error!Response {
     s.delete(id) catch |err| return mapStoreError(gpa, err);
-    s.flush() catch {};
+    persist(s);
     return .{ .status = .no_content, .body = "" };
 }
 
@@ -151,7 +160,7 @@ fn createMilestone(gpa: Allocator, s: *Store, pid: []const u8, body: []const u8)
     defer parsed.deinit();
 
     const m = s.createMilestone(pid, parsed.value) catch |err| return mapStoreError(gpa, err);
-    s.flush() catch {};
+    persist(s);
     return jsonResponse(gpa, .created, m);
 }
 
@@ -161,13 +170,13 @@ fn updateMilestone(gpa: Allocator, s: *Store, pid: []const u8, mid: []const u8, 
     defer parsed.deinit();
 
     const m = s.updateMilestone(pid, mid, parsed.value) catch |err| return mapStoreError(gpa, err);
-    s.flush() catch {};
+    persist(s);
     return jsonResponse(gpa, .ok, m);
 }
 
 fn deleteMilestone(gpa: Allocator, s: *Store, pid: []const u8, mid: []const u8) Allocator.Error!Response {
     s.deleteMilestone(pid, mid) catch |err| return mapStoreError(gpa, err);
-    s.flush() catch {};
+    persist(s);
     return .{ .status = .no_content, .body = "" };
 }
 
@@ -231,6 +240,7 @@ fn jsonResponse(gpa: Allocator, status: std.http.Status, value: Value) Allocator
 const StoreOrOom = StoreError || Allocator.Error;
 
 fn mapStoreError(gpa: Allocator, err: StoreOrOom) Allocator.Error!Response {
+    log.debug("store rejected request: {s}", .{@errorName(err)});
     return switch (err) {
         error.Invalid => errorResponse(gpa, .bad_request, "Invalid request body", null),
         error.PursuitNotFound => errorResponse(gpa, .not_found, "Pursuit not found", null),

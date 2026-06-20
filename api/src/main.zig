@@ -6,6 +6,7 @@
 //! `store.zig` (domain + persistence); this file is the socket plumbing.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const net = std.Io.net;
 
 const pursuits = @import("pursuits.zig");
@@ -14,6 +15,18 @@ const store_mod = @import("store.zig");
 const default_port: u16 = 8080;
 const default_data_path = "data.json";
 const json_content_type: std.http.Header = .{ .name = "content-type", .value = "application/json" };
+
+const log = std.log.scoped(.server);
+
+/// Show debug logs in dev (Debug builds) and info-and-above in release. Set
+/// explicitly so `info` lifecycle lines survive `ReleaseFast`, where the std
+/// default would otherwise drop to `err`-only.
+pub const std_options: std.Options = .{
+    .log_level = switch (builtin.mode) {
+        .Debug => .debug,
+        else => .info,
+    },
+};
 
 pub fn main() !void {
     var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
@@ -42,15 +55,15 @@ pub fn main() !void {
     var server = try address.listen(io, .{ .reuse_address = true });
     defer server.deinit(io);
 
-    std.debug.print("training-tracker listening on http://127.0.0.1:{d}\n", .{port});
+    log.info("listening on http://127.0.0.1:{d} (data: {s})", .{ port, data_path });
 
     while (true) {
         const stream = server.accept(io) catch |err| {
-            std.debug.print("accept failed: {s}\n", .{@errorName(err)});
+            log.warn("accept failed: {s}", .{@errorName(err)});
             continue;
         };
         handleConnection(io, gpa, &store, stream) catch |err| {
-            std.debug.print("connection error: {s}\n", .{@errorName(err)});
+            log.warn("connection error: {s}", .{@errorName(err)});
         };
     }
 }
@@ -84,6 +97,7 @@ fn handleConnection(io: std.Io, gpa: std.mem.Allocator, store: *store_mod.Store,
 
     if (try pursuits.handle(gpa, store, method, target, body)) |resp| {
         defer if (resp.body.len > 0) gpa.free(resp.body);
+        log.debug("{s} {s} -> {d}", .{ @tagName(method), target, @intFromEnum(resp.status) });
         try request.respond(resp.body, .{
             .status = resp.status,
             .extra_headers = &.{json_content_type},
@@ -94,6 +108,7 @@ fn handleConnection(io: std.Io, gpa: std.mem.Allocator, store: *store_mod.Store,
 
     // Fallback routes handled inline.
     if (method == .GET and std.mem.eql(u8, stripQuery(target), "/health")) {
+        log.debug("{s} {s} -> 200", .{ @tagName(method), target });
         try request.respond("{\"status\":\"ok\"}", .{
             .status = .ok,
             .extra_headers = &.{json_content_type},
@@ -102,6 +117,7 @@ fn handleConnection(io: std.Io, gpa: std.mem.Allocator, store: *store_mod.Store,
         return;
     }
 
+    log.debug("{s} {s} -> 404", .{ @tagName(method), target });
     try request.respond("{\"status\":404,\"message\":\"Not found\"}", .{
         .status = .not_found,
         .extra_headers = &.{json_content_type},

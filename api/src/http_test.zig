@@ -15,6 +15,7 @@ const json_content_type: std.http.Header = .{ .name = "content-type", .value = "
 
 const ServerContext = struct {
     allocator: std.mem.Allocator,
+    threaded: std.Io.Threaded,
     io: std.Io,
     store: store_mod.Store,
     port: u16,
@@ -23,37 +24,56 @@ const ServerContext = struct {
     should_stop: std.atomic.Value(bool),
     thread: ?std.Thread = null,
 
-    fn init(allocator: std.mem.Allocator, io: std.Io, data_path: []const u8, port: u16) !*ServerContext {
+    // The server thread owns its I/O pool for its whole lifetime. (A previous
+    // version borrowed a pool from the caller that was torn down as soon as
+    // start() returned, leaving the server thread using freed I/O.)
+    fn init(allocator: std.mem.Allocator, data_path: []const u8, port: u16) !*ServerContext {
         const ctx = try allocator.create(ServerContext);
         errdefer allocator.destroy(ctx);
 
-        var store = try store_mod.Store.init(allocator, io, data_path);
-        errdefer store.deinit();
+        ctx.allocator = allocator;
+        ctx.threaded = std.Io.Threaded.init(allocator, .{});
+        errdefer ctx.threaded.deinit();
+        ctx.io = ctx.threaded.io();
+
+        ctx.store = try store_mod.Store.init(allocator, ctx.io, data_path);
+        errdefer ctx.store.deinit();
 
         const address = try net.IpAddress.parse("127.0.0.1", port);
-        const server = try address.listen(io, .{ .reuse_address = true });
-        errdefer server.deinit(io);
+        ctx.server = try address.listen(ctx.io, .{ .reuse_address = true });
+        errdefer ctx.server.deinit(ctx.io);
 
-        ctx.* = .{
-            .allocator = allocator,
-            .io = io,
-            .store = store,
-            .port = port,
-            .data_path = data_path,
-            .server = server,
-            .should_stop = std.atomic.Value(bool).init(false),
-        };
+        ctx.port = port;
+        ctx.data_path = data_path;
+        ctx.should_stop = std.atomic.Value(bool).init(false);
+        ctx.thread = null;
 
         return ctx;
     }
 
     fn deinit(self: *ServerContext) void {
         self.should_stop.store(true, .monotonic);
+        // A blocking accept() is not interrupted by the flag, so make one
+        // throwaway connection to wake it; the loop then observes should_stop.
+        self.wakeAccept();
         if (self.thread) |t| t.join();
         self.server.deinit(self.io);
         self.store.deinit();
         std.Io.Dir.cwd().deleteFile(self.io, self.data_path) catch {};
+        self.threaded.deinit();
         self.allocator.destroy(self);
+    }
+
+    /// Open and immediately close one TCP connection so the server thread's
+    /// blocking accept() returns and the run loop can re-check should_stop.
+    fn wakeAccept(self: *ServerContext) void {
+        var threaded: std.Io.Threaded = .init(self.allocator, .{});
+        defer threaded.deinit();
+        const io = threaded.io();
+
+        const address = net.IpAddress.parse("127.0.0.1", self.port) catch return;
+        var stream = address.connect(io, .{ .mode = .stream }) catch return;
+        stream.close(io);
     }
 
     fn run(self: *ServerContext) void {
@@ -135,11 +155,7 @@ pub const TestServer = struct {
     /// Start the server in a background thread on a unique port with an isolated data file.
     /// Polls until the /health endpoint responds or timeout is reached.
     pub fn start(allocator: std.mem.Allocator, port: u16, data_path: []const u8) !TestServer {
-        var threaded: std.Io.Threaded = .init(allocator, .{});
-        defer threaded.deinit();
-        const io = threaded.io();
-
-        const ctx = try ServerContext.init(allocator, io, data_path, port);
+        const ctx = try ServerContext.init(allocator, data_path, port);
         errdefer ctx.deinit();
 
         const thread = try std.Thread.spawn(.{}, ServerContext.run, .{ctx});
@@ -276,7 +292,7 @@ fn request(
 
     var body_buf: [1024 * 1024]u8 = undefined;
     const reader = response.reader(&body_buf);
-    const response_body = try reader.readAlloc(allocator, 1024 * 1024);
+    const response_body = try reader.allocRemaining(allocator, std.Io.Limit.limited(1024 * 1024));
 
     return Response{
         .status = response.head.status,

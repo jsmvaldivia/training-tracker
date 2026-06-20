@@ -90,10 +90,8 @@ lints `api/openapi.yaml` (fails on warnings).
 
 ## E2E Tests with Playwright
 
-**Two workflows available:**
-
-### 1. Local Playwright (`@playwright/test`)
-Installed in `web/` via `bun add -d @playwright/test`. Best for:
+Local Playwright (`@playwright/test`) installed in `web/` via
+`bun add -d @playwright/test`. Best for:
 - Running full test suite in CI
 - Debugging tests interactively (`bun test:e2e:ui`)
 - Test-driven development
@@ -108,49 +106,6 @@ bun test:e2e:debug     # step debugger
 
 Test files: `web/e2e/*.spec.ts`  
 Config: `web/playwright.config.ts`
-
-### 2. MCP Playwright (Interactive Browser Automation)
-Claude Code MCP server for ad-hoc browser automation and visual testing.
-
-**Setup** (configured in `~/.claude/settings.json`):
-```json
-{
-  "mcpServers": {
-    "playwright": {
-      "command": "npx",
-      "args": ["-y", "@playwright/mcp@latest"],
-      "env": {}
-    }
-  }
-}
-```
-
-**Activation**: Restart Claude Code after configuration changes.
-
-**Available MCP Tools** (after restart):
-- `playwright_navigate` - navigate to URL
-- `playwright_screenshot` - capture viewport
-- `playwright_click` - click elements
-- `playwright_fill` - fill form fields
-- `playwright_evaluate` - run JavaScript in page context
-- `playwright_select` - select dropdown options
-
-**Use cases**:
-- Visual regression checking (screenshot comparisons)
-- Ad-hoc UI exploration without writing test code
-- Quick validation of UI changes
-- Interactive debugging sessions
-
-**Example workflow**:
-```
-1. Navigate to http://localhost:3000
-2. Screenshot the dashboard
-3. Click on a pursuit card
-4. Screenshot the detail panel
-5. Compare before/after
-```
-
-**Note**: MCP Playwright is for **interactive exploration**. Use `@playwright/test` for **automated regression tests**.
 
 # Environment
 
