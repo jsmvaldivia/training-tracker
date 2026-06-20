@@ -71,6 +71,10 @@ pub fn main() !void {
 fn handleConnection(io: std.Io, gpa: std.mem.Allocator, store: *store_mod.Store, stream: net.Stream) !void {
     defer stream.close(io);
 
+    // Fixed buffer caps are intentional for this single-user, local domain: the
+    // request line/headers (target_buf), body (body_buf), and socket receive
+    // (recv_buf) are bounded rather than dynamically grown, so there is no 413/414
+    // handling by design. Oversized inputs are simply truncated to the cap.
     var recv_buf: [64 * 1024]u8 = undefined;
     var send_buf: [64 * 1024]u8 = undefined;
     var stream_reader = stream.reader(io, &recv_buf);
@@ -128,7 +132,15 @@ fn handleConnection(io: std.Io, gpa: std.mem.Allocator, store: *store_mod.Store,
 fn readBody(request: *std.http.Server.Request, buf: []u8) []const u8 {
     if (!request.head.method.requestHasBody()) return "";
     const reader = request.readerExpectContinue(&.{}) catch return "";
-    const n = reader.readSliceShort(buf) catch return "";
+    // Loop until the body is fully read: a single short read can under-read a
+    // body split across TCP segments, which would otherwise reject a valid
+    // request. Stop at EOF (0 bytes) or when the buffer cap is reached.
+    var n: usize = 0;
+    while (n < buf.len) {
+        const read = reader.readSliceShort(buf[n..]) catch return buf[0..n];
+        if (read == 0) break;
+        n += read;
+    }
     return buf[0..n];
 }
 

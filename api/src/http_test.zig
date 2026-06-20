@@ -136,7 +136,14 @@ const ServerContext = struct {
     fn readBody(req: *std.http.Server.Request, buf: []u8) []const u8 {
         if (!req.head.method.requestHasBody()) return "";
         const reader = req.readerExpectContinue(&.{}) catch return "";
-        const n = reader.readSliceShort(buf) catch return "";
+        // Read to EOF (or the buffer cap); a single short read can under-read a
+        // body split across TCP segments. Mirrors readBody in main.zig.
+        var n: usize = 0;
+        while (n < buf.len) {
+            const read = reader.readSliceShort(buf[n..]) catch return buf[0..n];
+            if (read == 0) break;
+            n += read;
+        }
         return buf[0..n];
     }
 
