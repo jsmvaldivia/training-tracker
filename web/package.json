@@ -4,8 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun --hot server.ts",
-    "start": "bun server.ts",
+    "css": "tailwindcss -i ./src/index.css -o ./src/styles.gen.css",
+    "css:watch": "tailwindcss -i ./src/index.css -o ./src/styles.gen.css --watch",
+    "dev": "bun run css && (trap 'kill 0' EXIT; bun run css:watch & bun --hot server.ts)",
+    "start": "bun run css && bun server.ts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
