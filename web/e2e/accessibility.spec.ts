@@ -111,4 +111,19 @@ test.describe('Accessibility and Responsive Design', () => {
     await expect(root).toHaveClass(/bg-slate-50/);
     await expect(root).toHaveClass(/text-slate-900/);
   });
+
+  test('Tailwind utilities compile to real styles (not just class names)', async ({ page }) => {
+    // Guards the bun-plugin-tailwind build path: the class-name assertions above
+    // pass even if Tailwind emits an empty stylesheet. Reading the *computed*
+    // background-color proves the `bg-slate-50` utility resolved to an actual CSS
+    // rule. If Tailwind failed to compile, this would be transparent (rgba(0,0,0,0)).
+    const bg = await page
+      .locator('div.min-h-screen')
+      .first()
+      .evaluate((el) => getComputedStyle(el).backgroundColor);
+
+    expect(bg).toBeTruthy();
+    expect(bg).not.toBe('rgba(0, 0, 0, 0)');
+    expect(bg).not.toBe('transparent');
+  });
 });
