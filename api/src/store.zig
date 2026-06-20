@@ -113,7 +113,10 @@ pub const Store = struct {
         return std.fmt.allocPrint(a, "{s}{d}", .{ prefix, self.seq });
     }
 
-    /// Persist the current in-memory tree back to disk.
+    /// Persist the current in-memory tree back to disk via an atomic replace:
+    /// write to a sibling `<path>.tmp` then rename it over the live file. POSIX
+    /// rename is atomic, so a crash mid-write leaves the original file intact and
+    /// readers never observe a partial document.
     pub fn flush(self: *Store) !void {
         // Keep seq in the document so IDs stay monotonic across restarts.
         try self.root.object.put(self.alloc(), "seq", .{ .integer = @intCast(self.seq) });
@@ -121,10 +124,15 @@ pub const Store = struct {
         const bytes = try json.Stringify.valueAlloc(self.gpa, self.root, .{ .whitespace = .indent_2 });
         defer self.gpa.free(bytes);
 
-        try std.Io.Dir.cwd().writeFile(self.io, .{
-            .sub_path = self.path,
-            .data = bytes,
-        });
+        const tmp_path = try std.fmt.allocPrint(self.gpa, "{s}.tmp", .{self.path});
+        defer self.gpa.free(tmp_path);
+
+        const cwd = std.Io.Dir.cwd();
+        try cwd.writeFile(self.io, .{ .sub_path = tmp_path, .data = bytes });
+        // If the rename fails, drop the temp file so no stale `.tmp` is left
+        // behind; the live file is untouched either way.
+        errdefer cwd.deleteFile(self.io, tmp_path) catch {};
+        try cwd.rename(self.io, tmp_path, self.path);
     }
 
     // ---- Queries ---------------------------------------------------------
@@ -136,11 +144,15 @@ pub const Store = struct {
         offset: usize,
     };
 
-    /// Returns a paginated (and optionally type-filtered) view of pursuits.
-    /// The returned `data` slice borrows from the store's arena.
-    pub fn list(self: *Store, type_filter: ?[]const u8, limit: usize, offset: usize) !ListResult {
+    /// Returns a paginated (and optionally type-filtered) view of pursuits. The
+    /// temporary `matched` array is allocated with the caller-supplied `gpa`
+    /// (typically a per-request arena) so it does not leak into the store's
+    /// lifetime arena. The returned `data` slice borrows that allocator and the
+    /// pursuit Values (which live in the store arena), so it must be consumed
+    /// before `gpa` is freed.
+    pub fn list(self: *Store, gpa: Allocator, type_filter: ?[]const u8, limit: usize, offset: usize) !ListResult {
         const arr = self.pursuitsArray();
-        const a = self.alloc();
+        const a = gpa;
 
         var matched: std.ArrayList(Value) = .empty;
         for (arr.items) |item| {
@@ -187,8 +199,8 @@ pub const Store = struct {
 
         const name = try requireString(in, "name", 1, max_name_len);
         const ptype = try requireEnum(in, "type", &pursuit_types);
-        const target_date = try requireString(in, "target_date", 1, std.math.maxInt(usize));
-        const started_at = try requireString(in, "started_at", 1, std.math.maxInt(usize));
+        const target_date = try requireDateTime(in, "target_date");
+        const started_at = try requireDateTime(in, "started_at");
 
         // status defaults to "planned"
         const status = try optionalEnum(in, "status", &statuses) orelse "planned";
@@ -206,7 +218,7 @@ pub const Store = struct {
         try obj.put(a, "target_date", .{ .string = try a.dupe(u8, target_date) });
         try obj.put(a, "started_at", .{ .string = try a.dupe(u8, started_at) });
 
-        if (try optionalString(in, "expires_at", 0, std.math.maxInt(usize))) |e|
+        if (try optionalDateTime(in, "expires_at")) |e|
             try obj.put(a, "expires_at", .{ .string = try a.dupe(u8, e) });
 
         // Auto-set completed_at when created already completed.
@@ -236,11 +248,11 @@ pub const Store = struct {
             try obj.put(a, "type", .{ .string = v });
         if (try optionalString(in, "description", 0, max_description_len)) |v|
             try obj.put(a, "description", .{ .string = try a.dupe(u8, v) });
-        if (try optionalString(in, "target_date", 1, std.math.maxInt(usize))) |v|
+        if (try optionalDateTime(in, "target_date")) |v|
             try obj.put(a, "target_date", .{ .string = try a.dupe(u8, v) });
-        if (try optionalString(in, "started_at", 1, std.math.maxInt(usize))) |v|
+        if (try optionalDateTime(in, "started_at")) |v|
             try obj.put(a, "started_at", .{ .string = try a.dupe(u8, v) });
-        if (try optionalString(in, "expires_at", 0, std.math.maxInt(usize))) |v|
+        if (try optionalDateTime(in, "expires_at")) |v|
             try obj.put(a, "expires_at", .{ .string = try a.dupe(u8, v) });
 
         if (in.get("tags")) |_|
@@ -286,7 +298,7 @@ pub const Store = struct {
         const in = body.object;
 
         const name = try requireString(in, "name", 1, max_name_len);
-        const date = try requireString(in, "date", 1, std.math.maxInt(usize));
+        const date = try requireDateTime(in, "date");
         const state = try optionalEnum(in, "state", &milestone_states) orelse "pending";
 
         const arr = self.milestonesArray(pidx);
@@ -321,7 +333,7 @@ pub const Store = struct {
 
         if (try optionalString(in, "name", 1, max_name_len)) |v|
             try obj.put(a, "name", .{ .string = try a.dupe(u8, v) });
-        if (try optionalString(in, "date", 1, std.math.maxInt(usize))) |v|
+        if (try optionalDateTime(in, "date")) |v|
             try obj.put(a, "date", .{ .string = try a.dupe(u8, v) });
 
         if (try optionalEnum(in, "state", &milestone_states)) |new_state| {
@@ -377,7 +389,7 @@ pub const Store = struct {
             if (m != .object) return StoreError.Invalid;
             const mo = m.object;
             const name = try requireString(mo, "name", 1, max_name_len);
-            const date = try requireString(mo, "date", 1, std.math.maxInt(usize));
+            const date = try requireDateTime(mo, "date");
             const state = try optionalEnum(mo, "state", &milestone_states) orelse "pending";
 
             var obj = ObjectMap{};
@@ -413,6 +425,21 @@ fn optionalString(obj: ObjectMap, key: []const u8, min_len: usize, max_len: usiz
     if (v != .string) return error.Invalid;
     if (v.string.len < min_len or v.string.len > max_len) return error.Invalid;
     return v.string;
+}
+
+/// Like `requireString`, but additionally enforces the OpenAPI `date-time`
+/// contract (ISO 8601 UTC) on the value.
+fn requireDateTime(obj: ObjectMap, key: []const u8) ValidationError![]const u8 {
+    const v = try requireString(obj, key, 1, std.math.maxInt(usize));
+    if (!time_util.isIso8601(v)) return error.Invalid;
+    return v;
+}
+
+/// Like `optionalString`, but enforces `date-time` when the field is present.
+fn optionalDateTime(obj: ObjectMap, key: []const u8) ValidationError!?[]const u8 {
+    const v = (try optionalString(obj, key, 1, std.math.maxInt(usize))) orelse return null;
+    if (!time_util.isIso8601(v)) return error.Invalid;
+    return v;
 }
 
 fn requireEnum(obj: ObjectMap, key: []const u8, allowed: []const []const u8) ValidationError![]const u8 {
@@ -495,7 +522,7 @@ test "create assigns id, defaults status to planned, and persists in list" {
     try testing.expectEqualStrings("planned", created.object.get("status").?.string);
     try testing.expectEqual(@as(usize, 0), created.object.get("milestones").?.array.items.len);
 
-    const res = try s.list(null, 50, 0);
+    const res = try s.list(a, null, 50, 0);
     try testing.expectEqual(@as(usize, 1), res.total);
 }
 
@@ -507,7 +534,7 @@ test "create with status completed auto-sets completed_at" {
     defer s.deinit();
 
     const body = try parse(a,
-        \\{"name":"Done","type":"training","status":"completed","target_date":"x","started_at":"y"}
+        \\{"name":"Done","type":"training","status":"completed","target_date":"2026-12-31T00:00:00Z","started_at":"2026-06-01T00:00:00Z"}
     );
     const created = try s.create(body);
     try testing.expect(created.object.get("completed_at") != null);
@@ -532,14 +559,14 @@ test "create rejects invalid enum and over-length name" {
     defer s.deinit();
 
     const bad_type = try parse(a,
-        \\{"name":"n","type":"nope","target_date":"x","started_at":"y"}
+        \\{"name":"n","type":"nope","target_date":"2026-12-31T00:00:00Z","started_at":"2026-06-01T00:00:00Z"}
     );
     try testing.expectError(StoreError.Invalid, s.create(bad_type));
 
     var long_buf: [260]u8 = undefined;
     @memset(&long_buf, 'a');
     const long = try std.fmt.allocPrint(a,
-        \\{{"name":"{s}","type":"training","target_date":"x","started_at":"y"}}
+        \\{{"name":"{s}","type":"training","target_date":"2026-12-31T00:00:00Z","started_at":"2026-06-01T00:00:00Z"}}
     , .{long_buf[0..210]});
     const long_body = try parse(a, long);
     try testing.expectError(StoreError.Invalid, s.create(long_body));
@@ -561,7 +588,7 @@ test "update applies partial changes and sets completed_at on transition" {
     defer s.deinit();
 
     const created = try s.create(try parse(a,
-        \\{"name":"X","type":"training","target_date":"x","started_at":"y"}
+        \\{"name":"X","type":"training","target_date":"2026-12-31T00:00:00Z","started_at":"2026-06-01T00:00:00Z"}
     ));
     const id = created.object.get("id").?.string;
 
@@ -589,7 +616,7 @@ test "delete removes the pursuit" {
     var s = try testStore(testing.allocator);
     defer s.deinit();
     const created = try s.create(try parse(a,
-        \\{"name":"X","type":"training","target_date":"x","started_at":"y"}
+        \\{"name":"X","type":"training","target_date":"2026-12-31T00:00:00Z","started_at":"2026-06-01T00:00:00Z"}
     ));
     const id = try a.dupe(u8, created.object.get("id").?.string);
     try s.delete(id);
@@ -604,14 +631,14 @@ test "list filters by type and paginates" {
     var s = try testStore(testing.allocator);
     defer s.deinit();
 
-    _ = try s.create(try parse(a, "{\"name\":\"a\",\"type\":\"training\",\"target_date\":\"x\",\"started_at\":\"y\"}"));
-    _ = try s.create(try parse(a, "{\"name\":\"b\",\"type\":\"certification\",\"target_date\":\"x\",\"started_at\":\"y\"}"));
-    _ = try s.create(try parse(a, "{\"name\":\"c\",\"type\":\"training\",\"target_date\":\"x\",\"started_at\":\"y\"}"));
+    _ = try s.create(try parse(a, "{\"name\":\"a\",\"type\":\"training\",\"target_date\":\"2026-12-31T00:00:00Z\",\"started_at\":\"2026-06-01T00:00:00Z\"}"));
+    _ = try s.create(try parse(a, "{\"name\":\"b\",\"type\":\"certification\",\"target_date\":\"2026-12-31T00:00:00Z\",\"started_at\":\"2026-06-01T00:00:00Z\"}"));
+    _ = try s.create(try parse(a, "{\"name\":\"c\",\"type\":\"training\",\"target_date\":\"2026-12-31T00:00:00Z\",\"started_at\":\"2026-06-01T00:00:00Z\"}"));
 
-    const trainings = try s.list("training", 50, 0);
+    const trainings = try s.list(a, "training", 50, 0);
     try testing.expectEqual(@as(usize, 2), trainings.total);
 
-    const page = try s.list(null, 1, 1);
+    const page = try s.list(a, null, 1, 1);
     try testing.expectEqual(@as(usize, 3), page.total);
     try testing.expectEqual(@as(usize, 1), page.data.len);
 }
@@ -623,7 +650,7 @@ test "createMilestone assigns id and auto-sets achieved_at when achieved" {
     var s = try testStore(testing.allocator);
     defer s.deinit();
 
-    const created = try s.create(try parse(a, "{\"name\":\"X\",\"type\":\"training\",\"target_date\":\"x\",\"started_at\":\"y\"}"));
+    const created = try s.create(try parse(a, "{\"name\":\"X\",\"type\":\"training\",\"target_date\":\"2026-12-31T00:00:00Z\",\"started_at\":\"2026-06-01T00:00:00Z\"}"));
     const id = try a.dupe(u8, created.object.get("id").?.string);
 
     const m = try s.createMilestone(id, try parse(a,
@@ -643,7 +670,7 @@ test "createMilestone on missing pursuit returns not found" {
     var s = try testStore(testing.allocator);
     defer s.deinit();
     try testing.expectError(StoreError.PursuitNotFound, s.createMilestone("nope", try parse(a,
-        \\{"name":"E","date":"d"}
+        \\{"name":"E","date":"2026-07-15T00:00:00Z"}
     )));
 }
 
@@ -654,10 +681,10 @@ test "updateMilestone toggling achieved->pending clears achieved_at" {
     var s = try testStore(testing.allocator);
     defer s.deinit();
 
-    const created = try s.create(try parse(a, "{\"name\":\"X\",\"type\":\"training\",\"target_date\":\"x\",\"started_at\":\"y\"}"));
+    const created = try s.create(try parse(a, "{\"name\":\"X\",\"type\":\"training\",\"target_date\":\"2026-12-31T00:00:00Z\",\"started_at\":\"2026-06-01T00:00:00Z\"}"));
     const pid = try a.dupe(u8, created.object.get("id").?.string);
     const m = try s.createMilestone(pid, try parse(a,
-        \\{"name":"E","date":"d","state":"achieved"}
+        \\{"name":"E","date":"2026-07-15T00:00:00Z","state":"achieved"}
     ));
     const mid = try a.dupe(u8, m.object.get("id").?.string);
     try testing.expect((try s.get(pid)).object.get("milestones").?.array.items[0].object.get("achieved_at") != null);
@@ -673,9 +700,9 @@ test "deleteMilestone removes it; unknown milestone is not found" {
     var s = try testStore(testing.allocator);
     defer s.deinit();
 
-    const created = try s.create(try parse(a, "{\"name\":\"X\",\"type\":\"training\",\"target_date\":\"x\",\"started_at\":\"y\"}"));
+    const created = try s.create(try parse(a, "{\"name\":\"X\",\"type\":\"training\",\"target_date\":\"2026-12-31T00:00:00Z\",\"started_at\":\"2026-06-01T00:00:00Z\"}"));
     const pid = try a.dupe(u8, created.object.get("id").?.string);
-    const m = try s.createMilestone(pid, try parse(a, "{\"name\":\"E\",\"date\":\"d\"}"));
+    const m = try s.createMilestone(pid, try parse(a, "{\"name\":\"E\",\"date\":\"2026-07-15T00:00:00Z\"}"));
     const mid = try a.dupe(u8, m.object.get("id").?.string);
 
     try testing.expectError(StoreError.MilestoneNotFound, s.deleteMilestone(pid, "nope"));
@@ -691,7 +718,7 @@ test "tags over the limit are rejected" {
     defer s.deinit();
 
     var buf: std.ArrayList(u8) = .empty;
-    try buf.appendSlice(a, "{\"name\":\"X\",\"type\":\"training\",\"target_date\":\"x\",\"started_at\":\"y\",\"tags\":[");
+    try buf.appendSlice(a, "{\"name\":\"X\",\"type\":\"training\",\"target_date\":\"2026-12-31T00:00:00Z\",\"started_at\":\"2026-06-01T00:00:00Z\",\"tags\":[");
     for (0..21) |i| {
         if (i > 0) try buf.appendSlice(a, ",");
         try buf.appendSlice(a, "\"t\"");
@@ -713,15 +740,83 @@ test "flush writes and reload preserves seq and data" {
     {
         var s = try Store.init(testing.allocator, io, path);
         defer s.deinit();
-        _ = try s.create(try parse(a, "{\"name\":\"X\",\"type\":\"training\",\"target_date\":\"x\",\"started_at\":\"y\"}"));
+        _ = try s.create(try parse(a, "{\"name\":\"X\",\"type\":\"training\",\"target_date\":\"2026-12-31T00:00:00Z\",\"started_at\":\"2026-06-01T00:00:00Z\"}"));
         try s.flush();
     }
 
     var s2 = try Store.init(testing.allocator, io, path);
     defer s2.deinit();
-    const res = try s2.list(null, 50, 0);
+    const res = try s2.list(a, null, 50, 0);
     try testing.expectEqual(@as(usize, 1), res.total);
     // New IDs continue from persisted seq (no collision with p_1).
-    const created2 = try s2.create(try parse(a, "{\"name\":\"Y\",\"type\":\"training\",\"target_date\":\"x\",\"started_at\":\"y\"}"));
+    const created2 = try s2.create(try parse(a, "{\"name\":\"Y\",\"type\":\"training\",\"target_date\":\"2026-12-31T00:00:00Z\",\"started_at\":\"2026-06-01T00:00:00Z\"}"));
     try testing.expect(!std.mem.eql(u8, created2.object.get("id").?.string, "p_1"));
+}
+
+test "flush leaves no temp file and round-trips after reload" {
+    const io = testIo();
+    const path = "/tmp/training-tracker-durability-test.json";
+    const tmp_path = path ++ ".tmp";
+    std.Io.Dir.cwd().deleteFile(io, path) catch {};
+    std.Io.Dir.cwd().deleteFile(io, tmp_path) catch {};
+    defer std.Io.Dir.cwd().deleteFile(io, path) catch {};
+    defer std.Io.Dir.cwd().deleteFile(io, tmp_path) catch {};
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    {
+        var s = try Store.init(testing.allocator, io, path);
+        defer s.deinit();
+        _ = try s.create(try parse(a, "{\"name\":\"Durable\",\"type\":\"certification\",\"target_date\":\"2026-12-31T00:00:00Z\",\"started_at\":\"2026-06-01T00:00:00Z\"}"));
+        try s.flush();
+    }
+
+    // The atomic rename must not leave the temp file behind.
+    try testing.expectError(error.FileNotFound, std.Io.Dir.cwd().readFileAlloc(io, tmp_path, a, std.Io.Limit.limited(1024)));
+
+    // A fresh reload round-trips the persisted data.
+    var s2 = try Store.init(testing.allocator, io, path);
+    defer s2.deinit();
+    const res = try s2.list(a, null, 50, 0);
+    try testing.expectEqual(@as(usize, 1), res.total);
+    try testing.expectEqualStrings("Durable", res.data[0].object.get("name").?.string);
+}
+
+test "create rejects malformed date-time fields" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var s = try testStore(testing.allocator);
+    defer s.deinit();
+
+    const bad_target = try parse(a,
+        \\{"name":"n","type":"training","target_date":"x","started_at":"2026-06-01T00:00:00Z"}
+    );
+    try testing.expectError(StoreError.Invalid, s.create(bad_target));
+
+    const bad_started = try parse(a,
+        \\{"name":"n","type":"training","target_date":"2026-12-31T00:00:00Z","started_at":"nope"}
+    );
+    try testing.expectError(StoreError.Invalid, s.create(bad_started));
+
+    const bad_expires = try parse(a,
+        \\{"name":"n","type":"training","target_date":"2026-12-31T00:00:00Z","started_at":"2026-06-01T00:00:00Z","expires_at":"2026-13-01T00:00:00Z"}
+    );
+    try testing.expectError(StoreError.Invalid, s.create(bad_expires));
+}
+
+test "createMilestone rejects malformed date" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var s = try testStore(testing.allocator);
+    defer s.deinit();
+
+    const created = try s.create(try parse(a, "{\"name\":\"X\",\"type\":\"training\",\"target_date\":\"2026-12-31T00:00:00Z\",\"started_at\":\"2026-06-01T00:00:00Z\"}"));
+    const id = try a.dupe(u8, created.object.get("id").?.string);
+    try testing.expectError(StoreError.Invalid, s.createMilestone(id, try parse(a,
+        \\{"name":"Exam","date":"someday"}
+    )));
 }
