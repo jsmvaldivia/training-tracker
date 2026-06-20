@@ -4,30 +4,27 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "css": "tailwindcss -i ./src/index.css -o ./src/styles.gen.css",
-    "css:watch": "tailwindcss -i ./src/index.css -o ./src/styles.gen.css --watch",
-    "dev": "bun run css && (trap 'kill 0' EXIT; bun run css:watch & bun --hot server.ts)",
-    "start": "bun run css && bun server.ts",
+    "dev": "bun --hot server.ts",
+    "start": "bun server.ts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:debug": "playwright test --debug"
   },
   "dependencies": {
+    "clsx": "^2.1.1",
+    "date-fns": "^4.0.0",
+    "lucide-react": "^0.522.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "clsx": "^2.1.1",
-    "tailwind-merge": "^2.5.4",
-    "date-fns": "^4.0.0",
-    "lucide-react": "^0.522.0"
+    "tailwind-merge": "^3"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.0",
     "@types/bun": "latest",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
-    "autoprefixer": "^10.4.20",
-    "postcss": "^8.4.49",
-    "tailwindcss": "^3.4.17"
+    "bun-plugin-tailwind": "^0.1.2",
+    "tailwindcss": "^4"
   }
 }

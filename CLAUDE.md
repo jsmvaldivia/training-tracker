@@ -53,13 +53,17 @@ Test layers: **unit** (`store.zig`, `time_util.zig`) and **acceptance**
 server on a background thread; reserve it for the gate. For the tightest loop,
 run a single file directly: `zig test src/store.zig`.
 
-**Frontend** (`web/`, React 19 + Tailwind 3 on Bun):
+**Frontend** (`web/`, React 19 + Tailwind 4 on Bun):
 ```bash
 cd web
 bun install       # install dependencies
 bun dev           # dev server on http://localhost:3000 (proxies /api → :8080)
 bun start         # production mode
 ```
+
+Tailwind is compiled in-process by Bun via `bun-plugin-tailwind` (registered in
+`web/bunfig.toml`) — no CLI, no watcher, no generated file. Edit `src/index.css`
+directly; the theme lives in its `@theme` block.
 
 **E2E Tests** (`web/e2e/`, Playwright):
 ```bash
