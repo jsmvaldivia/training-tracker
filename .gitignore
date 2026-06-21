@@ -1,9 +1,6 @@
 zig-out/
 .zig-cache/
 
-# Backend-private runtime storage
-api/data.json
-
 # Frontend
 node_modules/
 *.bak

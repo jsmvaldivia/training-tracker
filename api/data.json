@@ -1,0 +1,123 @@
+{
+  "pursuits": [
+    {
+      "id": "p_1",
+      "name": "AWS Certified Solutions Architect",
+      "type": "certification",
+      "status": "in_progress",
+      "description": "Associate level certification for AWS cloud architecture.",
+      "target_date": "2026-07-05T00:00:00Z",
+      "started_at": "2026-05-22T00:00:00Z",
+      "tags": ["cloud", "aws", "architecture"],
+      "milestones": [
+        {
+          "id": "m_1",
+          "name": "Complete Cloud Practitioner",
+          "date": "2026-06-01T00:00:00Z",
+          "state": "achieved",
+          "achieved_at": "2026-05-31T00:00:00Z"
+        },
+        {
+          "id": "m_2",
+          "name": "Finish A Cloud Guru Course",
+          "date": "2026-06-16T00:00:00Z",
+          "state": "achieved",
+          "achieved_at": "2026-06-17T00:00:00Z"
+        },
+        {
+          "id": "m_3",
+          "name": "Pass Practice Exam 1",
+          "date": "2026-06-23T00:00:00Z",
+          "state": "pending"
+        },
+        {
+          "id": "m_4",
+          "name": "Book Exam",
+          "date": "2026-06-28T00:00:00Z",
+          "state": "pending"
+        }
+      ]
+    },
+    {
+      "id": "p_2",
+      "name": "Advanced Kubernetes Patterns",
+      "type": "training",
+      "status": "in_progress",
+      "description": "Deep dive into K8s operators and custom resources.",
+      "target_date": "2026-06-19T00:00:00Z",
+      "started_at": "2026-05-07T00:00:00Z",
+      "tags": ["kubernetes", "devops"],
+      "milestones": [
+        {
+          "id": "m_5",
+          "name": "Module 1: Architecture",
+          "date": "2026-05-12T00:00:00Z",
+          "state": "achieved",
+          "achieved_at": "2026-05-13T00:00:00Z"
+        },
+        {
+          "id": "m_6",
+          "name": "Module 2: Operators",
+          "date": "2026-06-01T00:00:00Z",
+          "state": "pending"
+        },
+        {
+          "id": "m_7",
+          "name": "Final Lab",
+          "date": "2026-06-16T00:00:00Z",
+          "state": "pending"
+        }
+      ]
+    },
+    {
+      "id": "p_3",
+      "name": "Certified Information Systems Security Professional",
+      "type": "certification",
+      "status": "planned",
+      "target_date": "2026-12-18T00:00:00Z",
+      "started_at": "2026-07-21T00:00:00Z",
+      "tags": ["security", "cissp"],
+      "milestones": [
+        {
+          "id": "m_8",
+          "name": "Buy Study Guide",
+          "date": "2026-07-26T00:00:00Z",
+          "state": "pending"
+        },
+        {
+          "id": "m_9",
+          "name": "Complete Domain 1-4",
+          "date": "2026-09-19T00:00:00Z",
+          "state": "pending"
+        }
+      ]
+    },
+    {
+      "id": "p_4",
+      "name": "React Performance Tuning",
+      "type": "training",
+      "status": "completed",
+      "target_date": "2026-04-22T00:00:00Z",
+      "started_at": "2026-03-23T00:00:00Z",
+      "completed_at": "2026-04-17T00:00:00Z",
+      "tags": ["frontend", "react"],
+      "milestones": [
+        {
+          "id": "m_10",
+          "name": "Profiler Deep Dive",
+          "date": "2026-04-02T00:00:00Z",
+          "state": "achieved",
+          "achieved_at": "2026-03-31T00:00:00Z"
+        },
+        {
+          "id": "m_11",
+          "name": "Memoization Lab",
+          "date": "2026-04-12T00:00:00Z",
+          "state": "achieved",
+          "achieved_at": "2026-04-14T00:00:00Z"
+        }
+      ]
+    }
+  ],
+  "seq": 11
+}
