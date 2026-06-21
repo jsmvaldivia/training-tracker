@@ -71,6 +71,10 @@ pub fn main() !void {
 fn handleConnection(io: std.Io, gpa: std.mem.Allocator, store: *store_mod.Store, stream: net.Stream) !void {
     defer stream.close(io);
 
+    // Fixed buffers, intentionally generous for this single-user domain: a
+    // request/response line over 64 KiB, a target over 8 KiB, or a body over
+    // 1 MiB is truncated rather than answered with 413/414. That ceremony isn't
+    // warranted here; the caps exist only to bound stack usage.
     var recv_buf: [64 * 1024]u8 = undefined;
     var send_buf: [64 * 1024]u8 = undefined;
     var stream_reader = stream.reader(io, &recv_buf);
@@ -128,8 +132,16 @@ fn handleConnection(io: std.Io, gpa: std.mem.Allocator, store: *store_mod.Store,
 fn readBody(request: *std.http.Server.Request, buf: []u8) []const u8 {
     if (!request.head.method.requestHasBody()) return "";
     const reader = request.readerExpectContinue(&.{}) catch return "";
-    const n = reader.readSliceShort(buf) catch return "";
-    return buf[0..n];
+    // Read until EOF or the buffer is full. Explicit loop rather than relying on
+    // a single read filling the buffer; bodies larger than `buf` are capped (see
+    // the buffer-size note in `handleConnection`).
+    var total: usize = 0;
+    while (total < buf.len) {
+        const n = reader.readSliceShort(buf[total..]) catch break;
+        if (n == 0) break;
+        total += n;
+    }
+    return buf[0..total];
 }
 
 fn stripQuery(target: []const u8) []const u8 {

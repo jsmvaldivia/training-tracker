@@ -104,28 +104,32 @@ fn listPursuits(gpa: Allocator, s: *Store, query: []const u8) Allocator.Error!Re
         }
     }
 
-    const res = s.list(type_filter, limit, offset) catch return oom(gpa);
-
-    // Build the PursuitsListResponse envelope as a Value.
+    // Request-scoped arena: owns both the store's transient `matched` array and
+    // the response envelope, all freed when this handler returns.
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
     const a = arena.allocator();
 
+    const res = s.list(a, type_filter, limit, offset) catch return oomRaw(gpa);
+
+    // Build the PursuitsListResponse envelope as a Value.
     var arr = json.Array.init(a);
-    for (res.data) |p| arr.append(p) catch return oom(gpa);
+    for (res.data) |p| arr.append(p) catch return oomRaw(gpa);
 
     var obj = json.ObjectMap{};
-    obj.put(a, "data", .{ .array = arr }) catch return oom(gpa);
-    obj.put(a, "total", .{ .integer = @intCast(res.total) }) catch return oom(gpa);
-    obj.put(a, "limit", .{ .integer = @intCast(res.limit) }) catch return oom(gpa);
-    obj.put(a, "offset", .{ .integer = @intCast(res.offset) }) catch return oom(gpa);
+    obj.put(a, "data", .{ .array = arr }) catch return oomRaw(gpa);
+    obj.put(a, "total", .{ .integer = @intCast(res.total) }) catch return oomRaw(gpa);
+    obj.put(a, "limit", .{ .integer = @intCast(res.limit) }) catch return oomRaw(gpa);
+    obj.put(a, "offset", .{ .integer = @intCast(res.offset) }) catch return oomRaw(gpa);
 
     return jsonResponse(gpa, .ok, .{ .object = obj });
 }
 
 fn createPursuit(gpa: Allocator, s: *Store, body: []const u8) Allocator.Error!Response {
-    const parsed = parseBody(gpa, body) catch
-        return errorResponse(gpa, .bad_request, "Invalid JSON body", null);
+    const parsed = switch (try parseBodyOr400(gpa, body)) {
+        .ok => |p| p,
+        .err => |r| return r,
+    };
     defer parsed.deinit();
 
     const created = s.create(parsed.value) catch |err| return mapStoreError(gpa, err);
@@ -139,8 +143,10 @@ fn getPursuit(gpa: Allocator, s: *Store, id: []const u8) Allocator.Error!Respons
 }
 
 fn updatePursuit(gpa: Allocator, s: *Store, id: []const u8, body: []const u8) Allocator.Error!Response {
-    const parsed = parseBody(gpa, body) catch
-        return errorResponse(gpa, .bad_request, "Invalid JSON body", null);
+    const parsed = switch (try parseBodyOr400(gpa, body)) {
+        .ok => |p| p,
+        .err => |r| return r,
+    };
     defer parsed.deinit();
 
     const updated = s.update(id, parsed.value) catch |err| return mapStoreError(gpa, err);
@@ -155,8 +161,10 @@ fn deletePursuit(gpa: Allocator, s: *Store, id: []const u8) Allocator.Error!Resp
 }
 
 fn createMilestone(gpa: Allocator, s: *Store, pid: []const u8, body: []const u8) Allocator.Error!Response {
-    const parsed = parseBody(gpa, body) catch
-        return errorResponse(gpa, .bad_request, "Invalid JSON body", null);
+    const parsed = switch (try parseBodyOr400(gpa, body)) {
+        .ok => |p| p,
+        .err => |r| return r,
+    };
     defer parsed.deinit();
 
     const m = s.createMilestone(pid, parsed.value) catch |err| return mapStoreError(gpa, err);
@@ -165,8 +173,10 @@ fn createMilestone(gpa: Allocator, s: *Store, pid: []const u8, body: []const u8)
 }
 
 fn updateMilestone(gpa: Allocator, s: *Store, pid: []const u8, mid: []const u8, body: []const u8) Allocator.Error!Response {
-    const parsed = parseBody(gpa, body) catch
-        return errorResponse(gpa, .bad_request, "Invalid JSON body", null);
+    const parsed = switch (try parseBodyOr400(gpa, body)) {
+        .ok => |p| p,
+        .err => |r| return r,
+    };
     defer parsed.deinit();
 
     const m = s.updateMilestone(pid, mid, parsed.value) catch |err| return mapStoreError(gpa, err);
@@ -232,8 +242,21 @@ fn parseBody(gpa: Allocator, body: []const u8) !json.Parsed(Value) {
     return json.parseFromSlice(Value, gpa, body, .{});
 }
 
+/// Parse a JSON request body, or yield a ready 400 response. Centralizes the
+/// parse + "Invalid JSON body" mapping shared by every mutating handler.
+/// On `.ok`, the caller owns the `Parsed` and must `defer parsed.deinit()`.
+const BodyOr400 = union(enum) { ok: json.Parsed(Value), err: Response };
+
+fn parseBodyOr400(gpa: Allocator, body: []const u8) Allocator.Error!BodyOr400 {
+    if (parseBody(gpa, body)) |parsed| {
+        return .{ .ok = parsed };
+    } else |_| {
+        return .{ .err = try errorResponse(gpa, .bad_request, "Invalid JSON body", null) };
+    }
+}
+
 fn jsonResponse(gpa: Allocator, status: std.http.Status, value: Value) Allocator.Error!Response {
-    const bytes = json.Stringify.valueAlloc(gpa, value, .{}) catch return oom(gpa);
+    const bytes = json.Stringify.valueAlloc(gpa, value, .{}) catch return oomRaw(gpa);
     return .{ .status = status, .body = bytes };
 }
 
@@ -245,21 +268,29 @@ fn mapStoreError(gpa: Allocator, err: StoreOrOom) Allocator.Error!Response {
         error.Invalid => errorResponse(gpa, .bad_request, "Invalid request body", null),
         error.PursuitNotFound => errorResponse(gpa, .not_found, "Pursuit not found", null),
         error.MilestoneNotFound => errorResponse(gpa, .not_found, "Milestone not found", null),
-        error.OutOfMemory => oom(gpa),
+        error.OutOfMemory => oomRaw(gpa),
     };
 }
 
+/// Build an error body via `json.Stringify` (the same path as success
+/// responses) so `message`/`details` are always correctly escaped — never
+/// hand-rolled string interpolation, which would emit invalid JSON the moment
+/// a value contained a quote or backslash.
 fn errorResponse(gpa: Allocator, status: std.http.Status, message: []const u8, details: ?[]const u8) Allocator.Error!Response {
-    const code: i64 = @intFromEnum(status);
-    const body = if (details) |d|
-        std.fmt.allocPrint(gpa, "{{\"status\":{d},\"message\":\"{s}\",\"details\":\"{s}\"}}", .{ code, message, d }) catch return oomRaw(gpa)
-    else
-        std.fmt.allocPrint(gpa, "{{\"status\":{d},\"message\":\"{s}\"}}", .{ code, message }) catch return oomRaw(gpa);
-    return .{ .status = status, .body = body };
-}
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
 
-fn oom(gpa: Allocator) Response {
-    return oomRaw(gpa);
+    var obj = json.ObjectMap{};
+    obj.put(a, "status", .{ .integer = @intFromEnum(status) }) catch return oomRaw(gpa);
+    obj.put(a, "message", .{ .string = message }) catch return oomRaw(gpa);
+    if (details) |d| obj.put(a, "details", .{ .string = d }) catch return oomRaw(gpa);
+
+    // Bind an explicit `Value`: `valueAlloc` takes `anytype`, so an inline
+    // `.{ .object = obj }` would be stringified as a raw struct, not JSON.
+    const v: Value = .{ .object = obj };
+    const bytes = json.Stringify.valueAlloc(gpa, v, .{}) catch return oomRaw(gpa);
+    return .{ .status = status, .body = bytes };
 }
 
 fn oomRaw(gpa: Allocator) Response {
@@ -326,7 +357,9 @@ test "acceptance: POST /pursuits then GET /pursuits/{id} round-trips through the
     // Persistence side effect: it was written to the file.
     var s2 = try Store.init(testing.allocator, testIo(), path);
     defer s2.deinit();
-    const res = try s2.list(null, 50, 0);
+    var la = std.heap.ArenaAllocator.init(testing.allocator);
+    defer la.deinit();
+    const res = try s2.list(la.allocator(), null, 50, 0);
     try testing.expectEqual(@as(usize, 1), res.total);
 }
 
@@ -337,7 +370,7 @@ test "acceptance: GET /pursuits returns a paginated envelope" {
     defer std.Io.Dir.cwd().deleteFile(testIo(), path) catch {};
 
     const c = try req(&s, .POST, "/pursuits",
-        \\{"name":"a","type":"training","target_date":"x","started_at":"y"}
+        \\{"name":"a","type":"training","target_date":"2026-12-31T00:00:00Z","started_at":"2026-06-01T00:00:00Z"}
     );
     testing.allocator.free(c.body);
 
@@ -381,7 +414,7 @@ test "acceptance: PATCH /pursuits/{id} updates and persists" {
     defer std.Io.Dir.cwd().deleteFile(testIo(), path) catch {};
 
     const c = try req(&s, .POST, "/pursuits",
-        \\{"name":"X","type":"training","target_date":"x","started_at":"y"}
+        \\{"name":"X","type":"training","target_date":"2026-12-31T00:00:00Z","started_at":"2026-06-01T00:00:00Z"}
     );
     const parsed = try json.parseFromSlice(Value, testing.allocator, c.body, .{});
     testing.allocator.free(c.body);
@@ -407,7 +440,7 @@ test "acceptance: DELETE /pursuits/{id} returns 204 and removes from store" {
     defer std.Io.Dir.cwd().deleteFile(testIo(), path) catch {};
 
     const c = try req(&s, .POST, "/pursuits",
-        \\{"name":"X","type":"training","target_date":"x","started_at":"y"}
+        \\{"name":"X","type":"training","target_date":"2026-12-31T00:00:00Z","started_at":"2026-06-01T00:00:00Z"}
     );
     const parsed = try json.parseFromSlice(Value, testing.allocator, c.body, .{});
     testing.allocator.free(c.body);
@@ -431,7 +464,7 @@ test "acceptance: milestone lifecycle POST/PATCH/DELETE" {
     defer std.Io.Dir.cwd().deleteFile(testIo(), path) catch {};
 
     const c = try req(&s, .POST, "/pursuits",
-        \\{"name":"X","type":"training","target_date":"x","started_at":"y"}
+        \\{"name":"X","type":"training","target_date":"2026-12-31T00:00:00Z","started_at":"2026-06-01T00:00:00Z"}
     );
     const parsed = try json.parseFromSlice(Value, testing.allocator, c.body, .{});
     testing.allocator.free(c.body);
@@ -474,10 +507,66 @@ test "acceptance: milestone on missing pursuit returns 404" {
     defer std.Io.Dir.cwd().deleteFile(testIo(), path) catch {};
 
     const r = try req(&s, .POST, "/pursuits/nope/milestones",
-        \\{"name":"E","date":"d"}
+        \\{"name":"E","date":"2026-07-15T00:00:00Z"}
     );
     defer testing.allocator.free(r.body);
     try testing.expectEqual(std.http.Status.not_found, r.status);
+}
+
+test "acceptance: POST /pursuits with a non-date-time target_date returns 400" {
+    const path = "/tmp/tt-acc-baddate.json";
+    var s = try freshStore(path);
+    defer s.deinit();
+    defer std.Io.Dir.cwd().deleteFile(testIo(), path) catch {};
+
+    const r = try req(&s, .POST, "/pursuits",
+        \\{"name":"X","type":"training","target_date":"someday","started_at":"2026-06-01T00:00:00Z"}
+    );
+    defer testing.allocator.free(r.body);
+    try testing.expectEqual(std.http.Status.bad_request, r.status);
+}
+
+test "acceptance: unsupported methods return 405" {
+    const path = "/tmp/tt-acc-405.json";
+    var s = try freshStore(path);
+    defer s.deinit();
+    defer std.Io.Dir.cwd().deleteFile(testIo(), path) catch {};
+
+    // Collection allows only GET/POST.
+    const c = try req(&s, .PUT, "/pursuits", "");
+    defer testing.allocator.free(c.body);
+    try testing.expectEqual(std.http.Status.method_not_allowed, c.status);
+
+    // Item allows only GET/PATCH/DELETE (405 is decided before existence).
+    const i = try req(&s, .POST, "/pursuits/p_1", "");
+    defer testing.allocator.free(i.body);
+    try testing.expectEqual(std.http.Status.method_not_allowed, i.status);
+
+    // Milestones collection allows only POST.
+    const m = try req(&s, .GET, "/pursuits/p_1/milestones", "");
+    defer testing.allocator.free(m.body);
+    try testing.expectEqual(std.http.Status.method_not_allowed, m.status);
+}
+
+test "acceptance: create ignores client-supplied read-only fields" {
+    const path = "/tmp/tt-acc-readonly.json";
+    var s = try freshStore(path);
+    defer s.deinit();
+    defer std.Io.Dir.cwd().deleteFile(testIo(), path) catch {};
+
+    // Client tries to dictate id and completed_at; the server must ignore both.
+    const c = try req(&s, .POST, "/pursuits",
+        \\{"id":"hacker","completed_at":"2000-01-01T00:00:00Z","name":"X","type":"training","target_date":"2026-12-31T00:00:00Z","started_at":"2026-06-01T00:00:00Z"}
+    );
+    defer testing.allocator.free(c.body);
+    try testing.expectEqual(std.http.Status.created, c.status);
+
+    const parsed = try json.parseFromSlice(Value, testing.allocator, c.body, .{});
+    defer parsed.deinit();
+    // Server-generated id, not the injected one.
+    try testing.expect(!std.mem.eql(u8, parsed.value.object.get("id").?.string, "hacker"));
+    // completed_at is not honored for a non-completed pursuit.
+    try testing.expect(parsed.value.object.get("completed_at") == null);
 }
 
 test "non-pursuit path returns null (falls through to other routes)" {

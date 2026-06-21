@@ -36,12 +36,13 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(unit_step);
     test_step.dependOn(http_step);
 
-    // Root module tests (routing in main.zig and everything it references).
-    const exe_tests = b.addTest(.{ .root_module = exe.root_module, .filters = filters });
-    unit_step.dependOn(&b.addRunArtifact(exe_tests).step);
-
     // Fast, socket-free tests: domain logic, time helpers, handler acceptance.
+    // Each file is its own test binary (see `addTests`); main.zig is included
+    // here too rather than as a separate `exe.root_module` test, so every test
+    // runs in exactly one process. Running a file's tests in two binaries at
+    // once would race on the hardcoded /tmp data paths the tests share.
     const unit_files = [_][]const u8{
+        "src/main.zig",
         "src/time_util.zig",
         "src/store.zig",
         "src/pursuits.zig",
