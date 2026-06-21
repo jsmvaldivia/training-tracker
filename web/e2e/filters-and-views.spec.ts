@@ -1,7 +1,9 @@
 import { test, expect } from '@playwright/test';
+import { mockApi } from './support/api-mocks';
 
 test.describe('Filters and View Toggle', () => {
   test.beforeEach(async ({ page }) => {
+    await mockApi(page);
     await page.goto('/');
   });
 

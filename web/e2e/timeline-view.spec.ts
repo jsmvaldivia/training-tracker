@@ -1,7 +1,9 @@
 import { test, expect } from '@playwright/test';
+import { mockApi } from './support/api-mocks';
 
 test.describe('Timeline View', () => {
   test.beforeEach(async ({ page }) => {
+    await mockApi(page);
     await page.goto('/');
     // Switch to timeline view
     await page.getByRole('button', { name: /timeline/i }).click();
