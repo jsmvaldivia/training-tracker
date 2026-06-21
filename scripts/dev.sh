@@ -19,6 +19,13 @@ cleanup() {
 }
 trap cleanup INT TERM EXIT
 
+# Seed the backend-private store on first run. data.json is the live, mutable
+# store (gitignored); data.seed.json is the tracked reference seed.
+if [ ! -f api/data.json ]; then
+  echo "seeding api/data.json from api/data.seed.json ..."
+  cp api/data.seed.json api/data.json
+fi
+
 echo "starting API on http://127.0.0.1:8080 ..."
 ( cd api && exec zig build run ) &
 pids+=("$!")

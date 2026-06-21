@@ -1,6 +1,9 @@
 zig-out/
 .zig-cache/
 
+# Backend-private runtime store (seeded from api/data.seed.json by scripts/dev.sh)
+api/data.json
+
 # Frontend
 node_modules/
 *.bak
