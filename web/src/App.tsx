@@ -1,28 +1,28 @@
-import { useEffect, useState } from 'react';
-import type { Pursuit } from './types';
+import { useState } from 'react';
 import { usePursuits } from './hooks/usePursuits';
+import { ToastProvider, useToast } from './components/Toast';
 import { DashboardHeader } from './components/DashboardHeader';
 import { PursuitCard } from './components/PursuitCard';
 import { PursuitDetailPanel } from './components/PursuitDetailPanel';
 import { TimelineView } from './components/TimelineView';
 
 export function App() {
-  // usePursuits owns the fetched list (read path, issue #3). The local mirror
-  // below keeps the existing detail-panel mutation working until issue #4 moves
-  // mutations into the hook; it is seeded from the hook's fetched data.
-  const { pursuits: fetchedPursuits, loading, error } = usePursuits();
-  const [pursuits, setPursuits] = useState<Pursuit[]>([]);
+  // usePursuits calls useToast(), so App must render inside the provider.
+  return (
+    <ToastProvider>
+      <AppContent />
+    </ToastProvider>
+  );
+}
+
+function AppContent() {
+  const toast = useToast();
+  const { pursuits, loading, error, updateMilestone, updatePursuit } = usePursuits({
+    onError: toast.error,
+  });
   const [view, setView] = useState<'dashboard' | 'timeline'>('dashboard');
   const [filterType, setFilterType] = useState<'all' | 'certification' | 'training'>('all');
   const [selectedPursuitId, setSelectedPursuitId] = useState<string | null>(null);
-
-  useEffect(() => {
-    setPursuits(fetchedPursuits);
-  }, [fetchedPursuits]);
-
-  const handleUpdatePursuit = (updated: Pursuit) => {
-    setPursuits((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
-  };
 
   const filteredPursuits = pursuits.filter((p) => {
     if (filterType !== 'all' && p.type !== filterType) return false;
@@ -30,6 +30,19 @@ export function App() {
   });
 
   const selectedPursuit = pursuits.find((p) => p.id === selectedPursuitId) || null;
+
+  const handleToggleMilestone = (milestoneId: string) => {
+    if (!selectedPursuit) return;
+    const milestone = selectedPursuit.milestones.find((m) => m.id === milestoneId);
+    if (!milestone) return;
+    const nextState = milestone.state === 'achieved' ? 'pending' : 'achieved';
+    void updateMilestone(selectedPursuit.id, milestoneId, { state: nextState });
+  };
+
+  const handleStatusChange = (status: (typeof pursuits)[number]['status']) => {
+    if (!selectedPursuit) return;
+    void updatePursuit(selectedPursuit.id, { status });
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 selection:bg-indigo-100 selection:text-indigo-900">
@@ -82,7 +95,8 @@ export function App() {
       <PursuitDetailPanel
         pursuit={selectedPursuit}
         onClose={() => setSelectedPursuitId(null)}
-        onUpdatePursuit={handleUpdatePursuit}
+        onToggleMilestone={handleToggleMilestone}
+        onStatusChange={handleStatusChange}
       />
     </div>
   );
