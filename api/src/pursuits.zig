@@ -10,6 +10,7 @@
 //! from `api/openapi.yaml`.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const store_mod = @import("store.zig");
 const Store = store_mod.Store;
 const StoreError = store_mod.StoreError;
@@ -20,11 +21,21 @@ const Value = json.Value;
 
 const log = std.log.scoped(.handler);
 
-/// Flush the store to disk, logging (rather than swallowing) any failure. The
-/// mutation already succeeded in memory and the response is sent regardless, so
-/// a write failure must not be silent — it means the change was not persisted.
-fn persist(s: *Store) void {
-    s.flush() catch |err| log.err("failed to persist store to disk: {s}", .{@errorName(err)});
+/// Flush the store to disk before reporting mutation success. The mutation has
+/// already changed the in-memory tree; on failure we return 500 so the client
+/// does not treat the change as durable. A later successful flush may still
+/// persist that in-memory state.
+fn persistOr500(gpa: Allocator, s: *Store) Allocator.Error!?Response {
+    s.flush() catch |err| {
+        // Skip the log in test builds: the failure-path test deliberately forces
+        // a flush error, and Zig's default test runner fails any test that emits
+        // an `err`-level log. Production keeps the `err` log — a write failure
+        // must surface even though the client already got its 500.
+        if (!builtin.is_test)
+            log.err("failed to persist store to disk: {s}", .{@errorName(err)});
+        return try errorResponse(gpa, .internal_server_error, "Failed to persist change", null);
+    };
+    return null;
 }
 
 pub const Response = struct {
@@ -133,7 +144,7 @@ fn createPursuit(gpa: Allocator, s: *Store, body: []const u8) Allocator.Error!Re
     defer parsed.deinit();
 
     const created = s.create(parsed.value) catch |err| return mapStoreError(gpa, err);
-    persist(s);
+    if (try persistOr500(gpa, s)) |r| return r;
     return jsonResponse(gpa, .created, created);
 }
 
@@ -150,13 +161,13 @@ fn updatePursuit(gpa: Allocator, s: *Store, id: []const u8, body: []const u8) Al
     defer parsed.deinit();
 
     const updated = s.update(id, parsed.value) catch |err| return mapStoreError(gpa, err);
-    persist(s);
+    if (try persistOr500(gpa, s)) |r| return r;
     return jsonResponse(gpa, .ok, updated);
 }
 
 fn deletePursuit(gpa: Allocator, s: *Store, id: []const u8) Allocator.Error!Response {
     s.delete(id) catch |err| return mapStoreError(gpa, err);
-    persist(s);
+    if (try persistOr500(gpa, s)) |r| return r;
     return .{ .status = .no_content, .body = "" };
 }
 
@@ -168,7 +179,7 @@ fn createMilestone(gpa: Allocator, s: *Store, pid: []const u8, body: []const u8)
     defer parsed.deinit();
 
     const m = s.createMilestone(pid, parsed.value) catch |err| return mapStoreError(gpa, err);
-    persist(s);
+    if (try persistOr500(gpa, s)) |r| return r;
     return jsonResponse(gpa, .created, m);
 }
 
@@ -180,13 +191,13 @@ fn updateMilestone(gpa: Allocator, s: *Store, pid: []const u8, mid: []const u8, 
     defer parsed.deinit();
 
     const m = s.updateMilestone(pid, mid, parsed.value) catch |err| return mapStoreError(gpa, err);
-    persist(s);
+    if (try persistOr500(gpa, s)) |r| return r;
     return jsonResponse(gpa, .ok, m);
 }
 
 fn deleteMilestone(gpa: Allocator, s: *Store, pid: []const u8, mid: []const u8) Allocator.Error!Response {
     s.deleteMilestone(pid, mid) catch |err| return mapStoreError(gpa, err);
-    persist(s);
+    if (try persistOr500(gpa, s)) |r| return r;
     return .{ .status = .no_content, .body = "" };
 }
 
@@ -567,6 +578,23 @@ test "acceptance: create ignores client-supplied read-only fields" {
     try testing.expect(!std.mem.eql(u8, parsed.value.object.get("id").?.string, "hacker"));
     // completed_at is not honored for a non-completed pursuit.
     try testing.expect(parsed.value.object.get("completed_at") == null);
+}
+
+test "acceptance: mutation returns 500 when persistence fails" {
+    const path = "/tmp/training-tracker-missing-parent-dir/tt-acc-persist-fail.json";
+    var s = try Store.init(testing.allocator, testIo(), path);
+    defer s.deinit();
+
+    const r = try req(&s, .POST, "/pursuits",
+        \\{"name":"X","type":"training","target_date":"2026-12-31T00:00:00Z","started_at":"2026-06-01T00:00:00Z"}
+    );
+    defer testing.allocator.free(r.body);
+
+    try testing.expectEqual(std.http.Status.internal_server_error, r.status);
+    const parsed = try json.parseFromSlice(Value, testing.allocator, r.body, .{});
+    defer parsed.deinit();
+    try testing.expectEqual(@as(i64, 500), parsed.value.object.get("status").?.integer);
+    try testing.expectEqualStrings("Failed to persist change", parsed.value.object.get("message").?.string);
 }
 
 test "non-pursuit path returns null (falls through to other routes)" {
