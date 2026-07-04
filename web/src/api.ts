@@ -28,7 +28,7 @@ interface PursuitCreate {
   }>;
 }
 
-interface PursuitUpdate {
+export interface PursuitUpdate {
   name?: string;
   type?: PursuitType;
   status?: 'planned' | 'in_progress' | 'completed' | 'expired';
@@ -45,7 +45,7 @@ interface MilestoneCreate {
   state?: MilestoneState;
 }
 
-interface MilestoneUpdate {
+export interface MilestoneUpdate {
   name?: string;
   date?: string;
   state?: MilestoneState;

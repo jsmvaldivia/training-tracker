@@ -192,6 +192,15 @@ paths:
                 status: 400
                 message: Invalid request body
                 details: "Field 'name' is required"
+        "500":
+          description: Failed to persist the created pursuit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                status: 500
+                message: Failed to persist change
 
   /pursuits/{id}:
     get:
@@ -311,6 +320,15 @@ paths:
               example:
                 status: 404
                 message: Pursuit not found
+        "500":
+          description: Failed to persist the updated pursuit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                status: 500
+                message: Failed to persist change
 
     delete:
       operationId: deletePursuit
@@ -338,6 +356,15 @@ paths:
               example:
                 status: 404
                 message: Pursuit not found
+        "500":
+          description: Failed to persist the pursuit deletion
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                status: 500
+                message: Failed to persist change
 
   /pursuits/{id}/milestones:
     post:
@@ -395,6 +422,15 @@ paths:
               example:
                 status: 404
                 message: Pursuit not found
+        "500":
+          description: Failed to persist the created milestone
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                status: 500
+                message: Failed to persist change
 
   /pursuits/{id}/milestones/{milestoneId}:
     patch:
@@ -467,6 +503,15 @@ paths:
               example:
                 status: 404
                 message: Milestone not found
+        "500":
+          description: Failed to persist the updated milestone
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                status: 500
+                message: Failed to persist change
     delete:
       operationId: deleteMilestone
       summary: Delete a milestone
@@ -500,6 +545,15 @@ paths:
               example:
                 status: 404
                 message: Milestone not found
+        "500":
+          description: Failed to persist the milestone deletion
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                status: 500
+                message: Failed to persist change
 
 components:
   schemas:

@@ -8,7 +8,7 @@ import {
   Award,
   BookOpen } from
 'lucide-react';
-import { Pursuit, Milestone } from '../types';
+import { Pursuit, PursuitStatus } from '../types';
 import { calculateDerivedState, cn } from '../utils';
 import { ProgressBars } from './ProgressBars';
 import { Badge } from './Badge';
@@ -16,47 +16,23 @@ import { format, parseISO } from 'date-fns';
 interface PursuitDetailPanelProps {
   pursuit: Pursuit | null;
   onClose: () => void;
-  onUpdatePursuit: (updated: Pursuit) => void;
+  // Presentational: the panel only signals intent. The owner (App + usePursuits)
+  // performs the optimistic update, server call, reconcile, and rollback. The
+  // panel does not stamp achieved_at / completed_at — the server does.
+  onToggleMilestone: (milestoneId: string) => void;
+  onStatusChange: (status: PursuitStatus) => void;
 }
 export function PursuitDetailPanel({
   pursuit,
   onClose,
-  onUpdatePursuit
+  onToggleMilestone,
+  onStatusChange
 }: PursuitDetailPanelProps) {
   if (!pursuit) return null;
   const derived = calculateDerivedState(pursuit);
   const isOverdue = derived.isOverdue && pursuit.status !== 'completed';
-  const toggleMilestone = (milestoneId: string) => {
-    const updatedMilestones = pursuit.milestones.map((m) => {
-      if (m.id === milestoneId) {
-        const isAchieved = m.state === 'achieved';
-        return {
-          ...m,
-          state: isAchieved ? 'pending' : 'achieved',
-          achieved_at: isAchieved ? undefined : new Date().toISOString()
-        } as Milestone;
-      }
-      return m;
-    });
-    onUpdatePursuit({
-      ...pursuit,
-      milestones: updatedMilestones
-    });
-  };
   const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newStatus = e.target.value as Pursuit['status'];
-    let updates: Partial<Pursuit> = {
-      status: newStatus
-    };
-    if (newStatus === 'completed' && !pursuit.completed_at) {
-      updates.completed_at = new Date().toISOString();
-    } else if (newStatus !== 'completed') {
-      updates.completed_at = undefined;
-    }
-    onUpdatePursuit({
-      ...pursuit,
-      ...updates
-    });
+    onStatusChange(e.target.value as PursuitStatus);
   };
   return (
     <>
@@ -186,7 +162,7 @@ export function PursuitDetailPanel({
                 return (
                   <div
                     key={milestone.id}
-                    onClick={() => toggleMilestone(milestone.id)}
+                    onClick={() => onToggleMilestone(milestone.id)}
                     className={cn(
                       'flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors',
                       isAchieved ?

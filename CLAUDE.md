@@ -36,6 +36,12 @@ See `docs/glossary/` for the full domain model.
 
 ## Build & Run
 
+**Full stack** (one command): `./scripts/dev.sh` boots the API (:8080) and the
+web dev server (:3000, proxies `/api` → :8080) together and shuts both down on
+Ctrl-C. On first run it seeds the backend-private store `api/data.json`
+(gitignored, live/mutable) from the tracked reference `api/data.seed.json`
+(the four reference pursuits).
+
 **Backend** (`api/`, Zig 0.16.0 — mind version-specific build API):
 ```bash
 zig build              # compile
