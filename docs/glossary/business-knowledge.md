@@ -1,8 +1,8 @@
 # Business knowledge
 
 Domain vocabulary and rules for Training Tracker. The human is the source of
-truth here; no domain code exists yet, so every entry below is **asserted** and
-awaits code to verify against.
+truth here. Entries are marked **asserted** until verified against code; where
+the code disagrees, the conflict is logged in [discrepancies.md](discrepancies.md).
 
 ### Pursuit
 A thing you are working toward — a certification or a training — with a name, a
