@@ -1,29 +1,76 @@
 # Testing Guide
 
-## Philosophy
+## End goal
 
-Tests validate user workflows, not implementation details.
+A change is safe to ship when the real stack — Zig API, JSON store, Bun proxy,
+React UI — carries a user through every core flow: create a pursuit, move it
+through its lifecycle, add and achieve milestones, and see progress on the
+dashboard and timeline. Tests exist to prove that, cheaply and often. Every
+tier below is a step toward that goal; none of them is the goal by itself.
 
-- Good: a user clicks a pursuit card and sees the detail panel.
-- Bad: a CSS class exists on a div, or a specific function was called.
+Rule for all tiers: tests validate user workflows and contract behavior, not
+implementation details. A CSS class existing or a function being called is
+not a test.
 
-## Layers
+## Tiers
 
-| Layer | Command | What it covers |
-|---|---|---|
-| Unit | `bun test:unit` | pure hooks/helpers in `src/**/*.test.ts` |
-| E2E | `bun test:e2e` | 51 Playwright specs in `e2e/*.spec.ts`, all passing |
+| Tier | Command | Runs against | Speed | Status |
+|---|---|---|---|---|
+| 1. Backend unit + acceptance | `zig build test:unit` (in `api/`) | store and handlers in-process | ms | in place |
+| 2. Backend HTTP integration | `zig build test:http` (in `api/`) | real server on a thread, temp data file | seconds | in place |
+| 3. Frontend unit | `bun test:unit` | pure hooks/helpers in `src/**/*.test.ts` | ms | in place |
+| 4. UI E2E, mocked API | `bun test:e2e` | Bun dev server, `/api/*` intercepted | ~10 s | in place, 51 specs |
+| 5. Full-stack E2E, real API | not wired yet | Bun proxy → Zig API on a scratch store | seconds | **the gap** |
 
-E2E specs run against `bun dev` (Playwright starts it) with the API mocked at
-the network layer. `e2e/support/api-mocks.ts` intercepts `/api/*` routes and
-serves fixtures from `e2e/support/fixtures.ts`, which re-exports the
-relative-date mock data in `src/data.ts`. The Zig backend is not needed.
-Pass `failMutations: true` to `mockApi` to exercise the rollback-and-toast path.
+Tiers 1 and 2 prove the backend honors `api/openapi.yaml`. Tiers 3 and 4
+prove the UI behaves given a contract-shaped response. Only tier 5 proves the
+two halves agree. Until it exists, a contract drift between `openapi.yaml`
+and the hand-written client in `src/api.ts` is caught by nobody.
+
+## Tier 4 today: mocked E2E
+
+Playwright starts `bun dev` itself. `e2e/support/api-mocks.ts` intercepts
+`/api/*` and serves fixtures from `e2e/support/fixtures.ts`, which re-exports
+the relative-date mock data in `src/data.ts`. The Zig backend is not needed.
+Pass `failMutations: true` to `mockApi` to drive the rollback-and-toast path.
 
 Spec files: `accessibility`, `dashboard`, `detail-panel`, `filters-and-views`,
 `mutations`, `timeline-view`.
 
-## Writing a spec
+Keep this tier fast and deterministic. It is the tier that runs on every
+change; it should never depend on the clock beyond relative fixture dates or
+on a process outside Bun.
+
+## Tier 5: what it takes
+
+The server already supports the two overrides the tier needs:
+
+- `PORT` selects the listen port (default 8080).
+- `DATA_PATH` selects the JSON store (default `data.json`).
+
+The Bun proxy honors `BACKEND_URL`. So a full-stack run is:
+
+1. Copy `api/data.seed.json` to a scratch path.
+2. Start the API with `PORT=8081 DATA_PATH=<scratch> zig build run`.
+3. Start the web server with `BACKEND_URL=http://127.0.0.1:8081 bun dev`.
+4. Run a separate Playwright project (`e2e-live/`) with no route mocks.
+5. Delete the scratch file.
+
+Design rules for the live suite when it is written:
+
+- One scratch store per run, reset from the seed. Never point at `api/data.json`.
+- Assert through the UI and then through the API (`GET /pursuits/{id}`), so
+  a test proves persistence, not just an optimistic render.
+- Cover the create → in_progress → completed lifecycle and milestone
+  achievement end to end. Filters, timeline layout, and accessibility stay in
+  tier 4; they do not need a real backend.
+- Keep it small. Ten flows that exercise the real store beat a copy of the
+  mocked suite.
+
+When the store moves to SQLite, only steps 1 and 5 change: the scratch store
+becomes a temp database file.
+
+## Writing a tier 4 spec
 
 Install the mocks in `beforeEach`, then write Given → When → Then:
 
@@ -73,7 +120,7 @@ Common failures:
 
 ## When a test fails
 
-1. Check whether the UI works manually.
+1. Check whether the UI works manually against the real stack (`./scripts/dev.sh`).
 2. If the UI works, fix the selector or the wait.
 3. If the UI is broken, fix the code and keep the test.
 4. Never weaken an assertion to get green.
