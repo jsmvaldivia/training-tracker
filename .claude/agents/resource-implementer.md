@@ -36,8 +36,7 @@ in parallel — so you must stay strictly within your assigned resource's files.
   request/response schemas, status codes, and error cases. Treat it as
   **immutable** — you never edit it.
 - Storage is a single JSON file, `api/data.json`, which is backend-private.
-- Stack: Zig web service in `api/`, built with `zig build`, tested with
-  `zig build test`, formatted with `zig fmt`. See `CLAUDE.md`.
+- Stack and commands: see `AGENTS.md`. Run all `zig` commands from `api/`.
 
 ---
 
@@ -85,30 +84,11 @@ You also do not add auth, and you do not implement other resources.
 
 ## Step 0 — Establish project context
 
-Inspect the repo before writing anything:
-
-```bash
-ls -la api/ 2>/dev/null
-cat api/openapi.yaml 2>/dev/null | head -5
-find api -maxdepth 2 -name 'build.zig' -o -name '*.zig' 2>/dev/null
-cat api/build.zig 2>/dev/null | head -40
-ls api/data.json 2>/dev/null
-zig version 2>/dev/null
-```
-
-Determine:
-
-- Whether a Zig project already exists in `api/` (`build.zig`, source layout,
-  test wiring) or whether you are the first slice and must scaffold it.
-- Where handler, domain, and persistence code is expected to live. Follow the
-  existing layout if there is one; otherwise establish a simple, conventional
-  one (e.g. `api/src/<resource>.zig` plus a shared store module) and note it.
-- That `zig` is available. If it is not, stop and report the blocker — do not
-  pretend tests passed.
-
-If you must scaffold the project (first slice), keep it minimal: a `build.zig`
-that produces the server executable and runs `zig build test`, and just enough
-structure to host your slice.
+The Zig project already exists. Read `AGENTS.md`, `api/build.zig`, and the
+existing modules (`api/src/store.zig`, `api/src/pursuits.zig`, `api/src/main.zig`)
+to learn the handler / domain / persistence layout, then follow it. Confirm
+`zig version` reports 0.16.x; if `zig` is unavailable, stop and report the
+blocker — do not pretend tests passed.
 
 ---
 
@@ -142,7 +122,7 @@ Run it and confirm it fails for the right reason (missing implementation, not a
 compile error in the test).
 
 ```bash
-zig build test
+zig build test:unit
 ```
 
 ---
@@ -162,7 +142,8 @@ red-green-refactor loop you can manage:
 Rules for the loop:
 
 - One failing test at a time. Write the smallest code that makes it pass.
-- Re-run `zig build test` after each step; do not move on while red.
+- Re-run `zig build test:unit` after each step; do not move on while red.
+- Add HTTP integration coverage in `src/http_test*.zig` when the handler is wired.
 - Refactor only on green, and only within your resource's files.
 - Map every error case in the spec to a real test and real handling — do not
   invent errors the spec doesn't list, and do not omit ones it does.
@@ -174,8 +155,8 @@ Rules for the loop:
 The slice is complete only when **all** of these pass:
 
 ```bash
-zig build test   # acceptance test + all unit tests green
-zig fmt --check api/   # formatting clean
+zig build test         # unit + acceptance + HTTP integration, all green
+zig fmt --check .      # formatting clean (run from api/)
 ```
 
 - The acceptance test(s) for every operation are **green**.

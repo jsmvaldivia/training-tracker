@@ -42,26 +42,22 @@ around backward compatibility.
 Inspect the repo before asking about the API:
 
 ```bash
-cat CLAUDE.md 2>/dev/null
-cat api/openapi.yaml 2>/dev/null | head -40
-cat api/.spectral.yaml 2>/dev/null
-ls docs/glossary/ 2>/dev/null
-ls scripts/validate-oas.sh 2>/dev/null
+cat AGENTS.md
+grep -n "^  /\|^    [A-Z][A-Za-z]*:$" api/openapi.yaml   # existing paths + schemas
+cat docs/glossary/index.md
 ```
 
-Note whether `api/openapi.yaml` exists, which schemas it already has, what the
-glossary documents (Pursuit, Milestone, Status), and whether the lint gate is in
-place (`api/.spectral.yaml` + `scripts/validate-oas.sh`). If either is missing,
-say so plainly — don't pretend the lint gate passed. Summarize what you found in
-one short paragraph before the first API question.
+Note which paths and schemas the spec already has and what the glossary
+documents. The lint gate is `scripts/validate-oas.sh`; if it fails to run,
+say so plainly — don't pretend it passed. Summarize what you found in one
+short paragraph before the first API question.
 
 ## Step 1 — Scope
 
-The contract path is always `api/openapi.yaml`. If it doesn't exist, create a
-minimal OpenAPI 3.x skeleton (`info.title`, `info.version`, a `servers` entry).
-If it exists, read it first and preserve existing paths, schemas, tags, and
-conventions unless the user decides to change them. For the first resource,
-suggest starting with the central domain object (Pursuit).
+The contract path is always `api/openapi.yaml`. Preserve existing paths,
+schemas, tags, and conventions unless the user decides to change them. Remind
+the user that `web/src/api.ts` is hand-written and must be updated after any
+contract change.
 
 ## Step 2 — Resource design loop
 
