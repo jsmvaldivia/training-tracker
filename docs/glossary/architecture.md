@@ -44,3 +44,37 @@ with Spectral, and explicitly writes **no implementation code** — the seam tha
 - Depends on / used by: produces `api/openapi.yaml`, consumed by
   [[resource-implementer]].
 Source: `.claude/agents/oas-designer.md` · verified
+
+### gate.sh (script)
+The local gate: every deterministic check, in order, in one process, with a
+machine-readable result. Agents judge; this script executes.
+- Code anchor: `scripts/gate.sh`
+- Steps, stop at first failure: `deps` (`bun install --frozen-lockfile`,
+  worktrees start without `node_modules`), `fmt` (`zig fmt --check`), `oas-lint`
+  (`scripts/validate-oas.sh`), `zig-test` (`zig build test`), `unit-cov`
+  (`bun test src` with the coverage threshold), `e2e` (`bun test:e2e`),
+  `perf` (runs `scripts/perf-snapshot.sh` when it exists, else skipped with a
+  reason — issue #35).
+- Output: `.gate/result.json` (gitignored) — `overall`, commit, branch, and one
+  entry per step with `status` (`passed` | `failed` | `skipped`), exit code,
+  duration, reason, and the output tail. A step that did not run is `skipped`,
+  never `passed`. Per-step logs sit next to it.
+- Preconditions: refuses to start when another `zig build test` is running
+  (tests share hardcoded `/tmp` data paths) or when port 3000 is held
+  (Playwright must start its own server).
+- `GATE_SKIP="e2e perf"` skips named steps; they are recorded as skipped.
+- Consumed by [[evaluator]] (agent) and, later, by CI (#13, #14) so local and
+  CI gates cannot drift.
+Source: jsmvaldivia, 2026-09-04 · verified
+
+### coverage gate
+How "no production code without a test" is enforced, per stack.
+- **web/** — Bun line + function coverage ≥ 80% of the files unit tests load,
+  enforced by `coverageThreshold` in `web/bunfig.toml`. Bun does not count
+  files no test imports, so this is a floor for reached code, not a census.
+- **api/** — Zig has no coverage tool and kcov does not run well on macOS, so
+  the rule is structural: every changed production file in `api/src` must have
+  a changed or added test that exercises it. [[evaluator]] checks this from the
+  diff. Also applied to `web/src` files that only Playwright reaches.
+- Later: kcov on a Linux CI runner replaces the structural rule for `api/`.
+Source: jsmvaldivia, 2026-09-04 · asserted

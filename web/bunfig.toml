@@ -1,2 +1,13 @@
 [serve.static]
 plugins = ["bun-plugin-tailwind"]
+
+# Unit-test coverage gate (issue #37). Bun measures only the files a test
+# imports, so this threshold protects the code unit tests reach — not every
+# file under src/. Files reached only by Playwright are covered by the
+# evaluator's diff rule instead (see web/TESTING.md).
+[test]
+coverage = true
+coverageReporter = ["text", "lcov"]
+coverageDir = "coverage"
+coverageSkipTestFiles = true
+coverageThreshold = { lines = 0.80, functions = 0.80 }
