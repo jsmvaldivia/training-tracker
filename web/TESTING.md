@@ -1,180 +1,129 @@
 # Testing Guide
 
-## Test Philosophy
+## End goal
 
-**Tests should validate user workflows, not implementation details.**
+A change is safe to ship when the real stack — Zig API, JSON store, Bun proxy,
+React UI — carries a user through every core flow: create a pursuit, move it
+through its lifecycle, add and achieve milestones, and see progress on the
+dashboard and timeline. Tests exist to prove that, cheaply and often. Every
+tier below is a step toward that goal; none of them is the goal by itself.
 
-✅ **Good**: Test that a user can click a pursuit card and see the detail panel  
-❌ **Bad**: Test that a CSS class exists on a div
+Rule for all tiers: tests validate user workflows and contract behavior, not
+implementation details. A CSS class existing or a function being called is
+not a test.
 
-✅ **Good**: Test that changing status updates the UI correctly  
-❌ **Bad**: Test that a specific function was called
+## Tiers
 
-## E2E Test Structure
+| Tier | Command | Runs against | Speed | Status |
+|---|---|---|---|---|
+| 1. Backend unit + acceptance | `zig build test:unit` (in `api/`) | store and handlers in-process | ms | in place |
+| 2. Backend HTTP integration | `zig build test:http` (in `api/`) | real server on a thread, temp data file | seconds | in place |
+| 3. Frontend unit | `bun test:unit` | pure hooks/helpers in `src/**/*.test.ts` | ms | in place |
+| 4. UI E2E, mocked API | `bun test:e2e` | Bun dev server, `/api/*` intercepted | ~10 s | in place, 51 specs |
+| 5. Full-stack E2E, real API | not wired yet | Bun proxy → Zig API on a scratch store | seconds | **the gap** |
 
-### Current Coverage (40/46 passing)
+Tiers 1 and 2 prove the backend honors `api/openapi.yaml`. Tiers 3 and 4
+prove the UI behaves given a contract-shaped response. Only tier 5 proves the
+two halves agree. Until it exists, a contract drift between `openapi.yaml`
+and the hand-written client in `src/api.ts` is caught by nobody.
 
-**Core User Flows:**
-1. **Dashboard View** - View all pursuits in card grid
-2. **Filters** - Filter by type (all/certification/training)
-3. **View Toggle** - Switch between dashboard and timeline
-4. **Detail Panel** - Click card → open panel → view/edit details
-5. **Milestone Management** - Toggle milestone states
-6. **Accessibility** - Keyboard navigation, ARIA labels
+## Tier 4 today: mocked E2E
 
-### Writing Flow-Based Tests
+Playwright starts `bun dev` itself. `e2e/support/api-mocks.ts` intercepts
+`/api/*` and serves fixtures from `e2e/support/fixtures.ts`, which re-exports
+the relative-date mock data in `src/data.ts`. The Zig backend is not needed.
+Pass `failMutations: true` to `mockApi` to drive the rollback-and-toast path.
 
-**Pattern: Given → When → Then**
+Spec files: `accessibility`, `dashboard`, `detail-panel`, `filters-and-views`,
+`mutations`, `timeline-view`.
+
+Keep this tier fast and deterministic. It is the tier that runs on every
+change; it should never depend on the clock beyond relative fixture dates or
+on a process outside Bun.
+
+## Tier 5: what it takes
+
+The server already supports the two overrides the tier needs:
+
+- `PORT` selects the listen port (default 8080).
+- `DATA_PATH` selects the JSON store (default `data.json`).
+
+The Bun proxy honors `BACKEND_URL`. So a full-stack run is:
+
+1. Copy `api/data.seed.json` to a scratch path.
+2. Start the API with `PORT=8081 DATA_PATH=<scratch> zig build run`.
+3. Start the web server with `BACKEND_URL=http://127.0.0.1:8081 bun dev`.
+4. Run a separate Playwright project (`e2e-live/`) with no route mocks.
+5. Delete the scratch file.
+
+Design rules for the live suite when it is written:
+
+- One scratch store per run, reset from the seed. Never point at `api/data.json`.
+- Assert through the UI and then through the API (`GET /pursuits/{id}`), so
+  a test proves persistence, not just an optimistic render.
+- Cover the create → in_progress → completed lifecycle and milestone
+  achievement end to end. Filters, timeline layout, and accessibility stay in
+  tier 4; they do not need a real backend.
+- Keep it small. Ten flows that exercise the real store beat a copy of the
+  mocked suite.
+
+When the store moves to SQLite, only steps 1 and 5 change: the scratch store
+becomes a temp database file.
+
+## Writing a tier 4 spec
+
+Install the mocks in `beforeEach`, then write Given → When → Then:
 
 ```typescript
-test('user can mark a milestone as achieved', async ({ page }) => {
-  // GIVEN: User opens a pursuit with pending milestones
-  await page.goto('/');
-  const card = page.locator('div.cursor-pointer')
-    .filter({ hasText: 'AWS Certified Solutions Architect' })
-    .first();
-  await card.click();
-  await expect(page.getByText('Milestones')).toBeVisible({ timeout: 3000 });
+import { test, expect } from '@playwright/test';
+import { mockApi } from './support/api-mocks';
 
-  // WHEN: User clicks a pending milestone
+test.beforeEach(async ({ page }) => {
+  await mockApi(page);
+});
+
+test('user can mark a milestone as achieved', async ({ page }) => {
+  // GIVEN a pursuit with pending milestones is open
+  await page.goto('/');
+  await page.getByText('AWS Certified Solutions Architect').first().click();
+  await expect(page.getByText('Milestones')).toBeVisible();
+
+  // WHEN the user clicks a pending milestone
   const milestone = page.getByText('Pass Practice Exam 1');
   await milestone.click();
 
-  // THEN: Milestone shows as achieved (strikethrough styling)
-  // This tests the actual user-visible outcome
-  await expect(milestone.locator('..'))
-    .toHaveClass(/line-through/);
+  // THEN it renders as achieved
+  await expect(milestone.locator('..')).toHaveClass(/line-through/);
 });
 ```
 
-## Test Anti-Patterns to Avoid
+Selector priority: user-facing text, then ARIA role, then `data-testid`,
+then CSS classes as a last resort.
 
-### ❌ Testing Just to Pass
-```typescript
-// BAD: Weakened assertion that doesn't validate the feature
-test('shows progress', async ({ page }) => {
-  await expect(page.locator('div')).toBeVisible(); // Too generic!
-});
-```
+Fixture dates are built as `Date.now() ± N days`, so time-derived assertions
+(overdue counts, progress) stay valid. Do not hardcode dates in specs.
 
-### ✅ Test the Actual Feature
-```typescript
-// GOOD: Validates the complete user-visible outcome
-test('shows time and achievement progress for active pursuits', async ({ page }) => {
-  await page.goto('/');
-  
-  // Find a pursuit card for an in-progress pursuit
-  const awsCard = page.locator('div.cursor-pointer')
-    .filter({ hasText: 'AWS Certified Solutions Architect' });
-  
-  // Should show both progress bars with labels
-  await expect(awsCard.getByText('Time')).toBeVisible();
-  await expect(awsCard.getByText('Achievement')).toBeVisible();
-  
-  // Should show progress percentages (bars themselves)
-  const progressBars = awsCard.locator('[class*="bg-indigo"]');
-  expect(await progressBars.count()).toBeGreaterThan(0);
-});
-```
+## Debugging
 
-## Debugging Failing Tests
-
-### Use Interactive UI Mode
 ```bash
-bun test:e2e:ui
-```
-This shows:
-- Test execution timeline
-- DOM snapshots at each step
-- Network requests
-- Console logs
-- Screenshots on failure
-
-### Common Issues
-
-**Strict Mode Violations**: Element appears multiple times
-```typescript
-// ❌ Fails: "certification" appears in header AND panel
-await expect(page.getByText('certification')).toBeVisible();
-
-// ✅ Works: Scope to specific container
-const panel = page.locator('[class*="fixed"][class*="right-0"]').first();
-await expect(panel.getByText('certification')).toBeVisible();
+bun test:e2e:ui       # timeline, DOM snapshots, network, console
+bun test:e2e:headed   # visible browser
+bun test:e2e:debug    # step debugger
 ```
 
-**Timing Issues**: Element not ready yet
-```typescript
-// ❌ Might fail: Panel hasn't opened yet
-await card.click();
-await expect(panel).toBeVisible();
+Common failures:
 
-// ✅ Works: Wait for panel content
-await card.click();
-await expect(page.getByText('Milestones')).toBeVisible({ timeout: 3000 });
-```
+- **Strict mode violation**: the text appears in more than one place. Scope
+  to a container or use `{ exact: true }`.
+- **Timing**: assert on content that proves the transition finished (for
+  example the "Milestones" heading) rather than on the click itself.
 
-**Wrong Selectors**: Text exists elsewhere
-```typescript
-// ❌ "aws" matches heading AND tag
-await expect(page.getByText('aws')).toBeVisible();
+## When a test fails
 
-// ✅ Use exact match or scope
-await expect(page.getByText('aws', { exact: true })).toBeVisible();
-```
-
-## MCP Playwright for Visual Validation
-
-**When to use MCP vs `@playwright/test`:**
-
-### Use `@playwright/test` for:
-- Automated regression tests
-- CI/CD integration
-- Test-driven development
-- Reproducible test runs
-
-### Use MCP Playwright for:
-- Visual inspection (screenshots)
-- Ad-hoc UI exploration
-- Quick validation during development
-- Interactive debugging
-- Comparing UI states
-
-**Example MCP workflow:**
-```
-// After making UI changes:
-1. Start dev server: bun dev
-2. Use MCP: playwright_navigate http://localhost:3000
-3. Use MCP: playwright_screenshot (baseline)
-4. Make changes
-5. Use MCP: playwright_screenshot (comparison)
-6. Verify visual differences
-```
-
-## Test Maintenance
-
-**When tests fail:**
-
-1. **First**: Check if the UI actually works manually
-2. **If UI works**: Fix the test selectors
-3. **If UI broken**: Fix the code, keep test as-is
-4. **Never**: Weaken assertions just to pass
-
-**Selector priority:**
-1. User-facing text: `page.getByText('Submit')`
-2. ARIA roles: `page.getByRole('button', { name: 'Submit' })`
-3. Test IDs: `page.locator('[data-testid="submit-btn"]')`
-4. CSS classes: Last resort, likely to break
-
-## Current Test Status
-
-**40/46 passing (87%)**
-
-**6 failing tests** need investigation:
-- Are they exposing real bugs?
-- Do selectors need refinement?
-- Are timing/waiting strategies adequate?
-
-**Fix philosophy**: Make tests robust by improving waiting strategies and selectors, NOT by removing assertions or weakening checks.
+1. Check whether the UI works manually against the real stack (`./scripts/dev.sh`).
+2. If the UI works, fix the selector or the wait.
+3. If the UI is broken, fix the code and keep the test.
+4. Never weaken an assertion to get green.
 
 ## Unit coverage gate
 
