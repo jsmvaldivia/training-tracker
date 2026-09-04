@@ -13,6 +13,12 @@ if [[ ! -f "$RULESET" ]]; then
   exit 1
 fi
 
-exec bunx @stoplight/spectral-cli@6 lint "$SPEC" \
+CLI="web/node_modules/@stoplight/spectral-cli/dist/index.js"
+if [[ ! -f "$CLI" ]]; then
+  echo "error: Spectral missing. Run mise exec -- ./scripts/setup.sh." >&2
+  exit 1
+fi
+
+exec bun "$CLI" lint "$SPEC" \
   --ruleset "$RULESET" \
   --fail-severity warn

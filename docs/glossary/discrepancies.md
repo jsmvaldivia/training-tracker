@@ -9,5 +9,5 @@ it · date.
 
 ---
 
-None logged. No domain code exists yet — all glossary entries are `asserted` and
-await code to verify against.
+None logged. Domain code exists; this log does not imply that every glossary
+entry has been verified against the implementation.

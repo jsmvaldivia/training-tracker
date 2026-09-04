@@ -17,3 +17,10 @@ node_modules/
 # Local gate output (scripts/gate.sh) and Bun coverage reports
 .gate/
 web/coverage/
+
+# Personal agent overrides (do not depend on a machine's global Git excludes)
+.claude/settings.local.json
+CLAUDE.local.md
+
+# Generated browser-test artifacts
+web/blob-report/
