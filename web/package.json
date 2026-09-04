@@ -7,10 +7,10 @@
     "dev": "bun --hot server.ts",
     "start": "bun server.ts",
     "test:unit": "bun test src",
-    "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui",
-    "test:e2e:headed": "playwright test --headed",
-    "test:e2e:debug": "playwright test --debug"
+    "test:e2e": "bun node_modules/@playwright/test/cli.js test",
+    "test:e2e:ui": "bun node_modules/@playwright/test/cli.js test --ui",
+    "test:e2e:headed": "bun node_modules/@playwright/test/cli.js test --headed",
+    "test:e2e:debug": "bun node_modules/@playwright/test/cli.js test --debug"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -22,6 +22,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.61.0",
+    "@stoplight/spectral-cli": "6.16.3",
     "@types/bun": "latest",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",

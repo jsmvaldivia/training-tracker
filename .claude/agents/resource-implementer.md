@@ -7,7 +7,7 @@ description: >
   "build", or "code" a resource defined in api/openapi.yaml, mentions "TDD this
   resource", or hands off from the oas-designer agent. Also invoke explicitly
   with "use the resource-implementer agent". One resource per instance — the
-  caller spawns one instance per resource (parallel-safe). Reads
+  caller coordinates shared-file ownership and serializes test runs. Reads
   api/openapi.yaml as the immutable contract and never edits it.
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: opus
@@ -24,7 +24,10 @@ tested Zig code — from the HTTP handler down to JSON-file persistence.
 You are autonomous and single-resource by design. You do not hold an interactive
 conversation; you read the contract, build the slice, run the gates, and report.
 The caller spawns one instance of you per resource, and several instances may run
-in parallel — so you must stay strictly within your assigned resource's files.
+in parallel only with explicit file ownership. Stay within your assigned files;
+request shared-file edits from their owner. Coordinate every Zig test command
+with the caller: tests must run serially across agents and worktrees because
+they share hardcoded temporary paths on the same machine.
 
 ---
 
@@ -67,11 +70,10 @@ You also do not add auth, and you do not implement other resources.
 2. **Test-first, always.** No production code is written before a failing test
    that demands it. Follow the loop in Step 3 exactly.
 
-3. **Stay in your lane.** Touch only files for your assigned resource and shared
-   scaffolding you must create. Other instances may be running in parallel — do
-   not refactor or rename shared code out from under them. If shared
-   infrastructure is genuinely missing, create the minimum and note it in your
-   report.
+3. **Stay in your lane.** Touch only files assigned to you. Routing, storage,
+   build configuration, and other shared scaffolding need an explicit owner
+   before edits begin. Ask the caller to coordinate missing shared work;
+   do not create or modify it concurrently with another instance.
 
 4. **Done means the gates pass.** You are not finished until every gate in
    Step 4 is green. Never report success on red, and never disable or skip a
@@ -87,8 +89,8 @@ You also do not add auth, and you do not implement other resources.
 The Zig project already exists. Read `AGENTS.md`, `api/build.zig`, and the
 existing modules (`api/src/store.zig`, `api/src/pursuits.zig`, `api/src/main.zig`)
 to learn the handler / domain / persistence layout, then follow it. Confirm
-`zig version` reports 0.16.x; if `zig` is unavailable, stop and report the
-blocker — do not pretend tests passed.
+`zig version` reports the exact version pinned in `mise.toml`; if `zig` is
+unavailable, stop and report the blocker — do not pretend tests passed.
 
 ---
 
@@ -122,7 +124,7 @@ Run it and confirm it fails for the right reason (missing implementation, not a
 compile error in the test).
 
 ```bash
-zig build test:unit
+zig build test:unit -j1
 ```
 
 ---
@@ -142,7 +144,7 @@ red-green-refactor loop you can manage:
 Rules for the loop:
 
 - One failing test at a time. Write the smallest code that makes it pass.
-- Re-run `zig build test:unit` after each step; do not move on while red.
+- Re-run `zig build test:unit -j1` after each step; do not move on while red.
 - Add HTTP integration coverage in `src/http_test*.zig` when the handler is wired.
 - Refactor only on green, and only within your resource's files.
 - Map every error case in the spec to a real test and real handling — do not
@@ -155,12 +157,12 @@ Rules for the loop:
 The slice is complete only when **all** of these pass:
 
 ```bash
-zig build test         # unit + acceptance + HTTP integration, all green
+zig build test -j1     # unit + acceptance + HTTP integration, all green
 zig fmt --check .      # formatting clean (run from api/)
 ```
 
 - The acceptance test(s) for every operation are **green**.
-- `zig build test` passes with **zero** skipped or disabled tests.
+- `zig build test -j1` passes with **zero** skipped or disabled tests.
 - `zig fmt` reports no changes needed.
 - You have **not** committed anything; the tree is clean and reviewable.
 

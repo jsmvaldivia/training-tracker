@@ -105,6 +105,7 @@ finish() {
 
 # ---- preconditions ---------------------------------------------------------
 # Zig test binaries share hardcoded /tmp data paths: never two runs at once.
+# `-j1` also serializes the per-file binaries within this one build.
 if pgrep -f "zig build test" >/dev/null; then
   echo "error: another 'zig build test' is running; it would race on /tmp data paths" >&2
   exit 2
@@ -124,7 +125,7 @@ echo "gate: $(git rev-parse --abbrev-ref HEAD 2>/dev/null) @ $(git rev-parse --s
 run_step deps       web  bun install --frozen-lockfile
 run_step fmt        api  zig fmt --check .
 run_step oas-lint   .    scripts/validate-oas.sh
-run_step zig-test   api  zig build test
+run_step zig-test   api  zig build test -j1
 run_step unit-cov   web  bun run test:unit
 run_step e2e        web  bun run test:e2e
 
