@@ -13,3 +13,7 @@ node_modules/
 
 # Harness-managed agent worktrees
 .claude/worktrees/
+
+# Local gate output (scripts/gate.sh) and Bun coverage reports
+.gate/
+web/coverage/

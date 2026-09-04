@@ -175,3 +175,19 @@ await expect(page.getByText('aws', { exact: true })).toBeVisible();
 - Are timing/waiting strategies adequate?
 
 **Fix philosophy**: Make tests robust by improving waiting strategies and selectors, NOT by removing assertions or weakening checks.
+
+## Unit coverage gate
+
+`bun test src` always runs with coverage (`web/bunfig.toml`, `[test]`). The run
+fails when line or function coverage of the **loaded** files drops below 80%.
+An `lcov` report lands in `web/coverage/` (gitignored).
+
+Bun measures only the files a unit test imports. A file under `src/` that no
+unit test loads does not appear in the report and does not lower the number.
+So the threshold protects the code unit tests reach, and nothing else. Code
+that only Playwright exercises (components, `App.tsx`) is checked by the
+evaluator agent's diff rule instead: every changed production file must have a
+changed or added test that exercises it (`docs/glossary/architecture.md`,
+"coverage gate").
+
+`scripts/gate.sh` runs this as its `unit-cov` step.

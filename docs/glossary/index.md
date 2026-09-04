@@ -18,6 +18,8 @@ Map of project knowledge. One line per entry; content lives in the topic pages.
 ## architecture
 - [resource-implementer](architecture.md#resource-implementer-agent) — agent: TDD-implements one backend resource (HTTP→persistence)
 - [oas-designer](architecture.md#oas-designer-agent) — agent: designs the OAS, writes no code
+- [gate.sh](architecture.md#gatesh-script) — script: all deterministic checks, writes `.gate/result.json`
+- [coverage gate](architecture.md#coverage-gate) — Bun threshold for web, diff rule for api
 
 ## Open discrepancies
 - [discrepancies.md](discrepancies.md) — code-vs-intent conflicts (none yet)
