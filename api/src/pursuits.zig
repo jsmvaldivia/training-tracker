@@ -42,6 +42,8 @@ pub const Response = struct {
     status: std.http.Status,
     /// JSON body, allocated with the handler's gpa. Empty for 204.
     body: []const u8,
+    /// Value of the `Allow` header; set only on 405 (RFC 9110 requires it).
+    allow: ?[]const u8 = null,
 };
 
 /// Routes a pursuit/milestone request. Returns null if the path does not
@@ -71,25 +73,33 @@ pub fn handle(
         .collection => switch (method) {
             .GET => try listPursuits(gpa, s, query),
             .POST => try createPursuit(gpa, s, body),
-            else => try errorResponse(gpa, .method_not_allowed, "Method not allowed", null),
+            else => try methodNotAllowed(gpa, "GET, POST"),
         },
         .item => switch (method) {
             .GET => try getPursuit(gpa, s, route.id.?),
             .PATCH => try updatePursuit(gpa, s, route.id.?, body),
             .DELETE => try deletePursuit(gpa, s, route.id.?),
-            else => try errorResponse(gpa, .method_not_allowed, "Method not allowed", null),
+            else => try methodNotAllowed(gpa, "GET, PATCH, DELETE"),
         },
         .milestones => switch (method) {
             .POST => try createMilestone(gpa, s, route.id.?, body),
-            else => try errorResponse(gpa, .method_not_allowed, "Method not allowed", null),
+            else => try methodNotAllowed(gpa, "POST"),
         },
         .milestone_item => switch (method) {
             .PATCH => try updateMilestone(gpa, s, route.id.?, route.milestone_id.?, body),
             .DELETE => try deleteMilestone(gpa, s, route.id.?, route.milestone_id.?),
-            else => try errorResponse(gpa, .method_not_allowed, "Method not allowed", null),
+            else => try methodNotAllowed(gpa, "PATCH, DELETE"),
         },
         .none => null,
     };
+}
+
+/// The contract's MethodNotAllowed response: Error body plus the `Allow`
+/// header naming what the path does support.
+pub fn methodNotAllowed(gpa: Allocator, allow: []const u8) Allocator.Error!Response {
+    var r = try errorResponse(gpa, .method_not_allowed, "Method not allowed", null);
+    r.allow = allow;
+    return r;
 }
 
 // ---- Operations ----------------------------------------------------------
@@ -595,7 +605,7 @@ test "acceptance: POST /pursuits with a non-date-time target_date returns 400" {
     try testing.expectEqual(std.http.Status.bad_request, r.status);
 }
 
-test "acceptance: unsupported methods return 405" {
+test "acceptance: unsupported methods return 405 with an Allow header" {
     const path = "/tmp/tt-acc-405.json";
     var s = try freshStore(path);
     defer s.deinit();
@@ -605,16 +615,30 @@ test "acceptance: unsupported methods return 405" {
     const c = try req(&s, .PUT, "/pursuits", "");
     defer testing.allocator.free(c.body);
     try testing.expectEqual(std.http.Status.method_not_allowed, c.status);
+    try testing.expectEqualStrings("GET, POST", c.allow.?);
 
     // Item allows only GET/PATCH/DELETE (405 is decided before existence).
     const i = try req(&s, .POST, "/pursuits/p_1", "");
     defer testing.allocator.free(i.body);
     try testing.expectEqual(std.http.Status.method_not_allowed, i.status);
+    try testing.expectEqualStrings("GET, PATCH, DELETE", i.allow.?);
 
     // Milestones collection allows only POST.
     const m = try req(&s, .GET, "/pursuits/p_1/milestones", "");
     defer testing.allocator.free(m.body);
     try testing.expectEqual(std.http.Status.method_not_allowed, m.status);
+    try testing.expectEqualStrings("POST", m.allow.?);
+
+    // Milestone item allows only PATCH/DELETE.
+    const mi = try req(&s, .GET, "/pursuits/p_1/milestones/m_1", "");
+    defer testing.allocator.free(mi.body);
+    try testing.expectEqual(std.http.Status.method_not_allowed, mi.status);
+    try testing.expectEqualStrings("PATCH, DELETE", mi.allow.?);
+
+    // A 2xx carries no Allow header.
+    const ok = try req(&s, .GET, "/pursuits", "");
+    defer testing.allocator.free(ok.body);
+    try testing.expect(ok.allow == null);
 }
 
 test "acceptance: create ignores client-supplied read-only fields" {

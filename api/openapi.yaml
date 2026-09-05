@@ -52,6 +52,8 @@ paths:
                 $ref: "#/components/schemas/Health"
               example:
                 status: ok
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
 
   /pursuits:
     get:
@@ -85,6 +87,9 @@ paths:
           schema:
             type: integer
             minimum: 0
+            # Bounded so every schema-valid value parses on the server; an
+            # offset past the end simply yields an empty page.
+            maximum: 2147483647
             default: 0
           description: Number of pursuits to skip for pagination (default 0).
           example: 0
@@ -585,6 +590,12 @@ components:
   responses:
     MethodNotAllowed:
       description: The path exists but does not support this HTTP method
+      headers:
+        Allow:
+          description: The methods this path does support, comma-separated.
+          schema:
+            type: string
+            example: "GET, PATCH, DELETE"
       content:
         application/json:
           schema:
@@ -603,6 +614,15 @@ components:
           enum: [ok]
           description: Liveness indicator; always 'ok' when the service responds.
           example: ok
+
+    Timestamp:
+      type: string
+      format: date-time
+      # date-time alone also admits offsets such as +02:00; this API stores and
+      # returns UTC only, so the pattern pins the literal Z zone.
+      pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+      description: ISO 8601 timestamp in UTC with a literal `Z` zone.
+      example: "2026-06-19T14:30:00Z"
 
     Status:
       type: string
@@ -632,8 +652,7 @@ components:
           description: Milestone name or description.
           example: "Complete Cloud Practitioner exam"
         date:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
           description: Target date for this milestone (ISO 8601).
           example: "2026-07-15T00:00:00Z"
         state:
@@ -658,8 +677,7 @@ components:
           description: Milestone name or description.
           example: "Complete Cloud Practitioner exam"
         date:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
           description: Target date for this milestone (ISO 8601).
           example: "2026-07-15T00:00:00Z"
         state:
@@ -684,15 +702,13 @@ components:
           description: Milestone name or description.
           example: "Complete Cloud Practitioner exam"
         date:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
           description: Target date for this milestone (ISO 8601).
           example: "2026-07-15T00:00:00Z"
         state:
           $ref: "#/components/schemas/MilestoneState"
         achieved_at:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
           description: >
             Timestamp when milestone was achieved (ISO 8601). Auto-set by server
             when state changes to 'achieved'. Read-only.
@@ -729,25 +745,21 @@ components:
           description: Optional notes or description.
           example: "Associate level certification for AWS cloud architecture."
         target_date:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
           description: Target completion date (ISO 8601).
           example: "2026-12-31T23:59:59Z"
         started_at:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
           description: Date when pursuit was started (ISO 8601).
           example: "2026-06-01T00:00:00Z"
         completed_at:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
           description: >
             Completion timestamp (ISO 8601). Auto-set by server when status
             changes to 'completed'. Read-only.
           example: "2026-12-15T10:30:00Z"
         expires_at:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
           description: >
             Expiration date for certifications (ISO 8601). Optional, typically
             only set for type=certification.
@@ -806,18 +818,15 @@ components:
           description: Optional notes or description.
           example: "Associate level certification for AWS cloud architecture."
         target_date:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
           description: Target completion date (ISO 8601).
           example: "2026-12-31T23:59:59Z"
         started_at:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
           description: Date when pursuit was started (ISO 8601).
           example: "2026-06-01T00:00:00Z"
         expires_at:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
           description: >
             Expiration date for certifications (ISO 8601). Optional, typically
             only set for type=certification.
@@ -867,14 +876,11 @@ components:
           type: string
           maxLength: 2000
         target_date:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
         started_at:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
         expires_at:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
         tags:
           type: array
           items:

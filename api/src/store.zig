@@ -420,7 +420,7 @@ pub const Store = struct {
             return StoreError.Invalid;
         }
         for (tags_val.array.items, 0..) |t, i| {
-            if (t != .string or t.string.len < 1 or t.string.len > max_tag_len) {
+            if (t != .string or charCount(t.string) < 1 or charCount(t.string) > max_tag_len) {
                 d.set("Field 'tags[{d}]' must be a string between 1 and {d} characters", .{ i, max_tag_len });
                 return StoreError.Invalid;
             }
@@ -528,11 +528,20 @@ fn checkString(d: *Diag, key: []const u8, v: Value, min_len: usize, max_len: usi
         d.set("Field '{s}' must be a string", .{key});
         return error.Invalid;
     }
-    if (v.string.len < min_len or v.string.len > max_len) {
+    const len = charCount(v.string);
+    if (len < min_len or len > max_len) {
         d.set("Field '{s}' must be between {d} and {d} characters", .{ key, min_len, max_len });
         return error.Invalid;
     }
     return v.string;
+}
+
+/// Length in characters (Unicode code points), which is what the contract's
+/// `minLength`/`maxLength` count — a 200-character name may be 800 bytes.
+/// std.json only yields valid UTF-8, so the count cannot fail; a malformed
+/// string is treated as too long rather than crashing.
+fn charCount(s: []const u8) usize {
+    return std.unicode.utf8CountCodepoints(s) catch std.math.maxInt(usize);
 }
 
 /// Like `requireString`, but the value must be an ISO-8601 UTC timestamp
@@ -1001,4 +1010,25 @@ test "updateMilestone reports a bad state with the allowed values" {
 
     try testing.expectError(StoreError.Invalid, s.updateMilestone(pid, mid, try parse(a, "{\"state\":\"done\"}")));
     try testing.expectEqualStrings("Field 'state' must be one of: pending, achieved", s.diag.message().?);
+}
+
+test "string limits count characters, not bytes" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var s = try testStore(testing.allocator);
+    defer s.deinit();
+
+    // 200 x U+00E9 (2 bytes each) is 400 bytes but exactly maxLength characters.
+    const name200 = "é" ** 200;
+    const ok = try std.fmt.allocPrint(a,
+        \\{{"name":"{s}","type":"training","target_date":"2026-12-31T00:00:00Z","started_at":"2026-06-01T00:00:00Z","tags":["{s}"]}}
+    , .{ name200, "日" ** 50 });
+    _ = try s.create(try parse(a, ok));
+
+    const too_long = try std.fmt.allocPrint(a,
+        \\{{"name":"{s}","type":"training","target_date":"2026-12-31T00:00:00Z","started_at":"2026-06-01T00:00:00Z"}}
+    , .{"é" ** 201});
+    try testing.expectError(StoreError.Invalid, s.create(try parse(a, too_long)));
+    try testing.expectEqualStrings("Field 'name' must be between 1 and 200 characters", s.diag.message().?);
 }
