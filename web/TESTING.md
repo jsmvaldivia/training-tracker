@@ -19,7 +19,7 @@ not a test.
 | 1. Backend unit + acceptance | `zig build test:unit` (in `api/`) | store and handlers in-process | ms | in place |
 | 2. Backend HTTP integration | `zig build test:http` (in `api/`) | real server on a thread, temp data file | seconds | in place |
 | 3. Frontend unit | `bun test:unit` | pure hooks/helpers in `src/**/*.test.ts` | ms | in place |
-| 4. UI E2E, mocked API | `bun test:e2e` | Bun dev server, `/api/*` intercepted | ~10 s | in place, 51 specs |
+| 4. UI E2E, mocked API | `bun test:e2e` | Bun dev server, `/api/*` intercepted | ~10 s | in place |
 | 5. Full-stack E2E, real API | `bun test:e2e:live` | Bun proxy → Zig API on a scratch store | seconds | in place |
 
 Tiers 1 and 2 prove the backend honors `api/openapi.yaml`. Tiers 3 and 4
@@ -34,8 +34,13 @@ Playwright starts `bun dev` itself. `e2e/support/api-mocks.ts` intercepts
 the relative-date mock data in `src/data.ts`. The Zig backend is not needed.
 Pass `failMutations: true` to `mockApi` to drive the rollback-and-toast path.
 
-Spec files: `accessibility`, `dashboard`, `detail-panel`, `filters-and-views`,
-`mutations`, `timeline-view`.
+Counts go stale in prose, so this file keeps none. For the current numbers:
+
+```bash
+bun test:e2e --list        # every tier 4 spec, by file
+bun test:e2e:live --list   # every tier 5 spec
+bun test:unit              # tier 3, with the coverage table
+```
 
 Keep this tier fast and deterministic. It is the tier that runs on every
 change; it should never depend on the clock beyond relative fixture dates or

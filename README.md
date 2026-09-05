@@ -88,8 +88,9 @@ bun test:e2e        # UI specs against a mocked API (Playwright)
 bun test:e2e:live   # full stack: real API on a scratch store, no mocks
 ```
 
-Open http://127.0.0.1:3000 — the page reads backend liveness via the proxied
-`/api/health`. The backend URL is configurable with `BACKEND_URL`
+Open http://127.0.0.1:3000 — the page loads its pursuits through the proxied
+`/api/pursuits` (`/api/health` exists for scripts and CI, the page does not
+call it). The backend URL is configurable with `BACKEND_URL`
 (default `http://127.0.0.1:8080`); the frontend port with `PORT` (default
 `3000`).
 
