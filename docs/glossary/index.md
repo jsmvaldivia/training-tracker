@@ -28,4 +28,4 @@ Map of project knowledge. One line per entry; content lives in the topic pages.
 - [coverage gate](architecture.md#coverage-gate) — Bun threshold for web, diff rule for api
 
 ## Open discrepancies
-- [discrepancies.md](discrepancies.md) — code-vs-intent conflicts (none yet)
+- [discrepancies.md](discrepancies.md) — code-vs-intent conflicts, adjudicated (four logged)

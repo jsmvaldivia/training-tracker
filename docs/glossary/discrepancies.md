@@ -47,5 +47,17 @@ it · date.
 - Anchor: `api/src/store.zig` (`max_tags`), `web/src/App.tsx` (`filterType`).
 - Flagged by: claude-md-audit · 2026-09-03
 
+### Milestone · overdue is not derived
+- Expected: [[overdue]] is a "state of a Pursuit (or Milestone) past its
+  `target_date` without completion", surfaced as a red marker on the
+  [[timeline]].
+- Actual: `calculateDerivedState` derives `isOverdue` for pursuits only; a
+  pending milestone past its date renders like any other in the panel and on
+  the timeline.
+- Anchor: `web/src/utils.ts` (`calculateDerivedState`),
+  `web/src/components/TimelineView.tsx`, `web/src/components/PursuitDetailPanel.tsx`.
+- Flagged by: jsmvaldivia · 2026-09-05 · tracked by issue #29 (remove this
+  entry when it merges).
+
 Not discrepancies (simply unimplemented, per README "deferred"): `leads_to`,
-[[plan]], [[resource]], [[renewal]].
+[[plan]], [[resource]], [[renewal]] — tracked by issues #27, #26, #25.
