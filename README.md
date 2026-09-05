@@ -129,6 +129,23 @@ docs/glossary/        domain model and project knowledge
 Two only: **local** (development) and **prod** (when deployed). No staging, no
 separate test environment.
 
+## Container image
+
+Prod is one image (`docs/adr/0001-container-deployment.md`): the ReleaseSafe
+API on `localhost:8080` inside the container, the Bun server on the only
+exposed port `3000`, and the JSON store on the `/data` volume, seeded from
+`api/data.seed.json` on the first start.
+
+```bash
+docker build -t training-tracker .
+docker run --rm -p 3000:3000 -v "$(pwd)/data:/data" training-tracker
+```
+
+A `v*` tag builds and pushes `ghcr.io/jsmvaldivia/training-tracker:<version>`
+and `:latest` and attaches the linux/x86_64 binary and the web bundle to a
+GitHub Release (`.github/workflows/release.yml`), after the same gates the
+backend and frontend workflows run.
+
 ## Contributing notes
 
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/)

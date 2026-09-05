@@ -8,10 +8,12 @@ import index from "./index.html";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const BACKEND_URL = process.env.BACKEND_URL ?? "http://127.0.0.1:8080";
+// Prod (the container sets NODE_ENV=production): minified bundle, no HMR.
+const DEVELOPMENT = process.env.NODE_ENV !== "production";
 
 const server = Bun.serve({
   port: PORT,
-  development: { hmr: true },
+  development: DEVELOPMENT ? { hmr: true } : false,
   routes: {
     "/": index,
 

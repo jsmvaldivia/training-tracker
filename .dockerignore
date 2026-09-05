@@ -1,0 +1,14 @@
+.git
+.gate
+.claude
+.schemathesis
+**/node_modules
+**/.zig-cache
+**/zig-out
+web/coverage
+web/test-results
+web/playwright-report
+web/playwright-report-live
+web/blob-report
+api/data.json
+docs
