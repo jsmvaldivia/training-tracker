@@ -4,7 +4,10 @@ import { ToastProvider, useToast } from './components/Toast';
 import { DashboardHeader } from './components/DashboardHeader';
 import { PursuitCard } from './components/PursuitCard';
 import { PursuitDetailPanel } from './components/PursuitDetailPanel';
+import { PursuitForm } from './components/PursuitForm';
 import { TimelineView } from './components/TimelineView';
+import { toCreateBody } from './pursuitForm';
+import type { PursuitFormValues } from './pursuitForm';
 
 export function App() {
   // usePursuits calls useToast(), so App must render inside the provider.
@@ -17,12 +20,13 @@ export function App() {
 
 function AppContent() {
   const toast = useToast();
-  const { pursuits, loading, error, updateMilestone, updatePursuit } = usePursuits({
+  const { pursuits, loading, error, updateMilestone, updatePursuit, createPursuit } = usePursuits({
     onError: toast.error,
   });
   const [view, setView] = useState<'dashboard' | 'timeline'>('dashboard');
   const [filterType, setFilterType] = useState<'all' | 'certification' | 'training'>('all');
   const [selectedPursuitId, setSelectedPursuitId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const filteredPursuits = pursuits.filter((p) => {
     if (filterType !== 'all' && p.type !== filterType) return false;
@@ -44,6 +48,11 @@ function AppContent() {
     void updatePursuit(selectedPursuit.id, { status });
   };
 
+  const handleCreate = async (values: PursuitFormValues) => {
+    const created = await createPursuit(toCreateBody(values));
+    return created !== null;
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 selection:bg-indigo-100 selection:text-indigo-900">
       <div className="max-w-6xl mx-auto px-4 py-8">
@@ -53,6 +62,7 @@ function AppContent() {
           onViewChange={setView}
           filterType={filterType}
           onFilterTypeChange={setFilterType}
+          onAddPursuit={() => setCreating(true)}
         />
 
         <main>
@@ -98,6 +108,8 @@ function AppContent() {
         onToggleMilestone={handleToggleMilestone}
         onStatusChange={handleStatusChange}
       />
+
+      {creating && <PursuitForm onSubmit={handleCreate} onClose={() => setCreating(false)} />}
     </div>
   );
 }

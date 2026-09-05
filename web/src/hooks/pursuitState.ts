@@ -27,6 +27,12 @@ export function reconcileMilestone(
   );
 }
 
+// `POST /pursuits` returns the created Pursuit — append it. Not optimistic:
+// there is nothing to show before the server assigns the id.
+export function appendPursuit(pursuits: Pursuit[], created: Pursuit): Pursuit[] {
+  return [...pursuits, created];
+}
+
 // --- Optimistic appliers: the local guess shown before the server responds --
 
 export function applyMilestonePatch(

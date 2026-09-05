@@ -12,7 +12,7 @@ interface PursuitsListResponse {
   offset: number;
 }
 
-interface PursuitCreate {
+export interface PursuitCreate {
   name: string;
   type: PursuitType;
   status?: 'planned' | 'in_progress' | 'completed' | 'expired';

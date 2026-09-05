@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from 'bun:test';
 import type { Milestone, Pursuit } from '../types';
 import {
+  appendPursuit,
   applyMilestonePatch,
   applyPursuitPatch,
   reconcileMilestone,
@@ -126,5 +127,15 @@ describe('runOptimisticUpdate', () => {
       onError
     );
     expect(onError).toHaveBeenCalledWith('Update failed');
+  });
+});
+
+describe('appendPursuit', () => {
+  it('adds the created pursuit at the end without touching the others', () => {
+    const pursuits = [pursuit('p1')];
+    const next = appendPursuit(pursuits, pursuit('p2'));
+    expect(next.map((p) => p.id)).toEqual(['p1', 'p2']);
+    expect(next[0]).toBe(pursuits[0]);
+    expect(pursuits).toHaveLength(1); // input untouched
   });
 });

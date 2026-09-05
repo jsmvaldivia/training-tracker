@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
-import type { MilestoneUpdate, PursuitUpdate } from '../api';
+import type { MilestoneUpdate, PursuitCreate, PursuitUpdate } from '../api';
 import type { Pursuit } from '../types';
 import {
+  appendPursuit,
   applyMilestonePatch,
   applyPursuitPatch,
   reconcileMilestone,
@@ -32,6 +33,8 @@ export interface UsePursuitsResult {
     patch: MilestoneUpdate
   ) => Promise<void>;
   updatePursuit: (pursuitId: string, patch: PursuitUpdate) => Promise<void>;
+  // Resolves to the created pursuit, or null after a failure was reported.
+  createPursuit: (data: PursuitCreate) => Promise<Pursuit | null>;
 }
 
 export function usePursuits(options: UsePursuitsOptions = {}): UsePursuitsResult {
@@ -107,5 +110,19 @@ export function usePursuits(options: UsePursuitsOptions = {}): UsePursuitsResult
     [onError]
   );
 
-  return { pursuits, loading, error, updateMilestone, updatePursuit };
+  const createPursuit = useCallback(
+    async (data: PursuitCreate): Promise<Pursuit | null> => {
+      try {
+        const created = await api.createPursuit(data);
+        setPursuits((current) => appendPursuit(current, created));
+        return created;
+      } catch (err) {
+        onError?.(err instanceof Error ? err.message : 'Create failed');
+        return null;
+      }
+    },
+    [onError]
+  );
+
+  return { pursuits, loading, error, updateMilestone, updatePursuit, createPursuit };
 }
