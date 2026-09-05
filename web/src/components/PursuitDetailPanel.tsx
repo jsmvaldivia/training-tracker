@@ -9,7 +9,7 @@ import {
   BookOpen } from
 'lucide-react';
 import { Pursuit, PursuitStatus } from '../types';
-import { calculateDerivedState, cn } from '../utils';
+import { calculateDerivedState, cn, isMilestoneOverdue } from '../utils';
 import { ProgressBars } from './ProgressBars';
 import { Badge } from './Badge';
 import { format, parseISO } from 'date-fns';
@@ -159,9 +159,11 @@ export function PursuitDetailPanel({
             <div className="flex flex-col gap-2">
                 {pursuit.milestones.map((milestone) => {
                 const isAchieved = milestone.state === 'achieved';
+                const overdue = isMilestoneOverdue(milestone);
                 return (
                   <div
                     key={milestone.id}
+                    data-milestone={milestone.id}
                     onClick={() => onToggleMilestone(milestone.id)}
                     className={cn(
                       'flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors',
@@ -188,8 +190,11 @@ export function PursuitDetailPanel({
 
                           {milestone.name}
                         </span>
-                        <span className="text-xs text-slate-500">
-                          {format(parseISO(milestone.date), 'MMM d')}
+                        <span className="flex items-center gap-2 text-xs text-slate-500">
+                          <span className={cn(overdue && 'text-red-600 font-medium')}>
+                            {format(parseISO(milestone.date), 'MMM d')}
+                          </span>
+                          {overdue && <Badge variant="danger">Overdue</Badge>}
                         </span>
                       </div>
                     </div>);

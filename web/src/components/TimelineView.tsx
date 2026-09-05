@@ -1,7 +1,7 @@
 import React from 'react';
 import { format, parseISO, isBefore, isAfter, differenceInDays } from 'date-fns';
 import { Pursuit } from '../types';
-import { calculateDerivedState, cn } from '../utils';
+import { calculateDerivedState, cn, isMilestoneOverdue } from '../utils';
 interface TimelineViewProps {
   pursuits: Pursuit[];
 }
@@ -113,17 +113,19 @@ export function TimelineView({ pursuits }: TimelineViewProps) {
                   {pursuit.milestones.map((m) => {
                     const mPct = getPercentage(m.date);
                     const mAchieved = m.state === 'achieved';
+                    const mOverdue = isMilestoneOverdue(m);
+                    const label = `${m.name} (${format(parseISO(m.date), 'MMM d')})`;
                     return (
                       <div
                         key={m.id}
                         className={cn(
                           'absolute w-3 h-3 rounded-full border-2 bg-white -mt-0.5 transform -translate-x-1.5 cursor-help',
-                          mAchieved ? 'border-emerald-500' : 'border-slate-400'
+                          mAchieved ? 'border-emerald-500' : mOverdue ? 'border-red-500 bg-red-50' : 'border-slate-400'
                         )}
                         style={{
                           left: `${mPct}%`
                         }}
-                        title={`${m.name} (${format(parseISO(m.date), 'MMM d')})`} />);
+                        title={mOverdue ? `${label} — overdue` : label} />);
 
 
                   })}
