@@ -65,17 +65,36 @@ binary=api/zig-out/bin/training-tracker
 binary_bytes=$(file_size "$binary")
 
 # ---- startup: wall time from spawn to the first /health 200 ------------------
-t0=$(now_ns)
-PORT="$PORT" DATA_PATH="$scratch" "$binary" > "$scratch_dir/api.log" 2>&1 &
-pid=$!
-for _ in $(seq 1 300); do
-  if curl -sf "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then break; fi
-  kill -0 "$pid" 2>/dev/null || { echo "error: API exited during startup" >&2; cat "$scratch_dir/api.log" >&2; exit 1; }
-  sleep 0.01
+# Three starts; the first pays the page-in of a freshly built binary (~150 ms
+# on macOS versus ~20 ms warm) and every gate run builds fresh, so it is kept
+# as startup_cold_ms for information and the best of three is the metric.
+start_api() {
+  PORT="$PORT" DATA_PATH="$scratch" "$binary" > "$scratch_dir/api.log" 2>&1 &
+  pid=$!
+  for _ in $(seq 1 300); do
+    if curl -sf "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then return 0; fi
+    kill -0 "$pid" 2>/dev/null || { echo "error: API exited during startup" >&2; cat "$scratch_dir/api.log" >&2; return 1; }
+    sleep 0.01
+  done
+  echo "error: API not ready on :$PORT" >&2
+  return 1
+}
+stop_api() {
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  pid=""
+}
+startup_wall_ms=""
+startup_cold_ms=""
+for attempt in 1 2 3; do
+  t0=$(now_ns)
+  start_api
+  t1=$(now_ns)
+  ms=$(( (t1 - t0) / 1000000 ))
+  [[ $attempt -eq 1 ]] && startup_cold_ms=$ms
+  if [[ -z "$startup_wall_ms" || $ms -lt $startup_wall_ms ]]; then startup_wall_ms=$ms; fi
+  [[ $attempt -lt 3 ]] && stop_api
 done
-t1=$(now_ns)
-curl -sf "http://127.0.0.1:$PORT/health" >/dev/null || { echo "error: API not ready on :$PORT" >&2; exit 1; }
-startup_wall_ms=$(( (t1 - t0) / 1000000 ))
 # The server's own measure (store load → listen), from its log line.
 startup_store_ms=$(grep -o 'startup [0-9.]* ms' "$scratch_dir/api.log" | grep -o '[0-9.]*' | head -1)
 startup_store_ms="${startup_store_ms:-0}"
@@ -100,13 +119,14 @@ timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 snapshot=$(jq -c -n \
   --arg timestamp "$timestamp" --arg commit "$commit" --arg platform "$platform" \
   --argjson requests "$REQUESTS" \
-  --argjson startup_wall_ms "$startup_wall_ms" --argjson startup_store_ms "$startup_store_ms" \
+  --argjson startup_wall_ms "$startup_wall_ms" --argjson startup_cold_ms "$startup_cold_ms" \
+  --argjson startup_store_ms "$startup_store_ms" \
   --argjson rss_idle_kb "$rss_idle_kb" --argjson rss_after_read_kb "$rss_after_read_kb" \
   --argjson rss_after_write_kb "$rss_after_write_kb" --argjson binary_bytes "$binary_bytes" \
   --slurpfile read "$scratch_dir/read.json" --slurpfile write "$scratch_dir/write.json" \
   '{
     timestamp: $timestamp, commit: $commit, platform: $platform, requests: $requests,
-    startup_wall_ms: $startup_wall_ms, startup_store_ms: $startup_store_ms,
+    startup_wall_ms: $startup_wall_ms, startup_cold_ms: $startup_cold_ms, startup_store_ms: $startup_store_ms,
     read_rps: ($read[0].summary.requestsPerSec | . * 10 | round / 10),
     read_p50_ms: ($read[0].latencyPercentiles.p50 * 1000 | . * 100 | round / 100),
     read_p99_ms: ($read[0].latencyPercentiles.p99 * 1000 | . * 100 | round / 100),
@@ -124,7 +144,7 @@ if (( JSON )); then
 else
   echo "$snapshot" | jq -r '
     "API performance snapshot — \(.platform) @ \(.commit), \(.requests) requests per load",
-    "  startup      \(.startup_wall_ms) ms wall (spawn → /health), \(.startup_store_ms) ms store load → listen",
+    "  startup      \(.startup_wall_ms) ms wall (best of 3, spawn → /health; cold \(.startup_cold_ms) ms), \(.startup_store_ms) ms store load → listen",
     "  read  GET    \(.read_rps) req/s  p50 \(.read_p50_ms) ms  p99 \(.read_p99_ms) ms  non-2xx \(.read_non_2xx)",
     "  write PATCH  \(.write_rps) req/s  p50 \(.write_p50_ms) ms  p99 \(.write_p99_ms) ms  non-2xx \(.write_non_2xx)",
     "  rss          idle \(.rss_idle_kb) KiB → after read \(.rss_after_read_kb) KiB → after write \(.rss_after_write_kb) KiB",

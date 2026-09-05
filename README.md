@@ -97,8 +97,9 @@ call it). The backend URL is configurable with `BACKEND_URL`
 ## Performance snapshot
 
 `scripts/bench.sh` measures the Zig API on a ReleaseSafe build against a
-scratch copy of the seed: startup (spawn to first `/health` 200, plus the
-server's own store-load time on its `listening on` line), read and write
+scratch copy of the seed: startup (best of three spawn-to-first-`/health` starts —
+the cold first start is reported but not compared — plus the server's own
+store-load time on its `listening on` line), read and write
 throughput with p50/p99 latency (`oha`, one connection per request because
 the server keeps none alive), RSS idle and after each load, and binary size.
 `scripts/perf-snapshot.sh` — the gate's `perf` step — compares a snapshot
