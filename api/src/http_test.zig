@@ -546,3 +546,20 @@ test "http: GET /pursuits?type=nope returns 400 instead of an empty list" {
 
     try testing.expectEqual(std.http.Status.bad_request, resp.status);
 }
+
+test "http: POST /pursuits with a missing field returns 400 whose details name it" {
+    const port: u16 = 8090;
+    const data_path = "/tmp/tt-http-details.json";
+
+    var server = try TestServer.start(testing.allocator, port, data_path);
+    defer server.shutdown();
+
+    var resp = try post(testing.allocator, port, "/pursuits", "{\"name\":\"X\",\"type\":\"training\",\"started_at\":\"2026-06-01T00:00:00Z\"}");
+    defer resp.deinit();
+
+    try testing.expectEqual(std.http.Status.bad_request, resp.status);
+
+    const parsed = try parseJson(testing.allocator, resp.body);
+    defer parsed.deinit();
+    try testing.expectEqualStrings("Field 'target_date' is required", parsed.value.object.get("details").?.string);
+}

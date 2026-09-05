@@ -925,7 +925,10 @@ components:
           example: "Pursuit not found"
         details:
           type: string
-          description: Optional detailed error information.
+          description: >
+            Which field or query parameter failed validation and why, e.g.
+            "Field 'name' is required". Present on every 400; absent on
+            404, 405, and 500.
           example: "No pursuit exists with id 'p_1'"
       example:
         status: 404

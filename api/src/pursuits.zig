@@ -130,13 +130,13 @@ fn createPursuit(gpa: Allocator, s: *Store, body: []const u8) Allocator.Error!Re
     };
     defer parsed.deinit();
 
-    const created = s.create(parsed.value) catch |err| return mapStoreError(gpa, err);
+    const created = s.create(parsed.value) catch |err| return mapStoreError(gpa, s, err);
     if (try persistOr500(gpa, s)) |r| return r;
     return jsonResponse(gpa, .created, created);
 }
 
 fn getPursuit(gpa: Allocator, s: *Store, id: []const u8) Allocator.Error!Response {
-    const p = s.get(id) catch |err| return mapStoreError(gpa, err);
+    const p = s.get(id) catch |err| return mapStoreError(gpa, s, err);
     return jsonResponse(gpa, .ok, p);
 }
 
@@ -147,13 +147,13 @@ fn updatePursuit(gpa: Allocator, s: *Store, id: []const u8, body: []const u8) Al
     };
     defer parsed.deinit();
 
-    const updated = s.update(id, parsed.value) catch |err| return mapStoreError(gpa, err);
+    const updated = s.update(id, parsed.value) catch |err| return mapStoreError(gpa, s, err);
     if (try persistOr500(gpa, s)) |r| return r;
     return jsonResponse(gpa, .ok, updated);
 }
 
 fn deletePursuit(gpa: Allocator, s: *Store, id: []const u8) Allocator.Error!Response {
-    s.delete(id) catch |err| return mapStoreError(gpa, err);
+    s.delete(id) catch |err| return mapStoreError(gpa, s, err);
     if (try persistOr500(gpa, s)) |r| return r;
     return .{ .status = .no_content, .body = "" };
 }
@@ -165,7 +165,7 @@ fn createMilestone(gpa: Allocator, s: *Store, pid: []const u8, body: []const u8)
     };
     defer parsed.deinit();
 
-    const m = s.createMilestone(pid, parsed.value) catch |err| return mapStoreError(gpa, err);
+    const m = s.createMilestone(pid, parsed.value) catch |err| return mapStoreError(gpa, s, err);
     if (try persistOr500(gpa, s)) |r| return r;
     return jsonResponse(gpa, .created, m);
 }
@@ -177,13 +177,13 @@ fn updateMilestone(gpa: Allocator, s: *Store, pid: []const u8, mid: []const u8, 
     };
     defer parsed.deinit();
 
-    const m = s.updateMilestone(pid, mid, parsed.value) catch |err| return mapStoreError(gpa, err);
+    const m = s.updateMilestone(pid, mid, parsed.value) catch |err| return mapStoreError(gpa, s, err);
     if (try persistOr500(gpa, s)) |r| return r;
     return jsonResponse(gpa, .ok, m);
 }
 
 fn deleteMilestone(gpa: Allocator, s: *Store, pid: []const u8, mid: []const u8) Allocator.Error!Response {
-    s.deleteMilestone(pid, mid) catch |err| return mapStoreError(gpa, err);
+    s.deleteMilestone(pid, mid) catch |err| return mapStoreError(gpa, s, err);
     if (try persistOr500(gpa, s)) |r| return r;
     return .{ .status = .no_content, .body = "" };
 }
@@ -314,8 +314,11 @@ const BodyOr400 = union(enum) { ok: json.Parsed(Value), err: Response };
 fn parseBodyOr400(gpa: Allocator, body: []const u8) Allocator.Error!BodyOr400 {
     if (parseBody(gpa, body)) |parsed| {
         return .{ .ok = parsed };
-    } else |_| {
-        return .{ .err = try errorResponse(gpa, .bad_request, "Invalid JSON body", null) };
+    } else |err| {
+        var buf: [96]u8 = undefined;
+        const details = std.fmt.bufPrint(&buf, "Request body is not valid JSON ({s})", .{@errorName(err)}) catch
+            "Request body is not valid JSON";
+        return .{ .err = try errorResponse(gpa, .bad_request, "Invalid JSON body", details) };
     }
 }
 
@@ -326,10 +329,12 @@ fn jsonResponse(gpa: Allocator, status: std.http.Status, value: Value) Allocator
 
 const StoreOrOom = StoreError || Allocator.Error;
 
-fn mapStoreError(gpa: Allocator, err: StoreOrOom) Allocator.Error!Response {
+/// Maps a store error to its contract status. For `error.Invalid` the store's
+/// diagnostic (which field, which rule) becomes `Error.details`.
+fn mapStoreError(gpa: Allocator, s: *Store, err: StoreOrOom) Allocator.Error!Response {
     log.debug("store rejected request: {s}", .{@errorName(err)});
     return switch (err) {
-        error.Invalid => errorResponse(gpa, .bad_request, "Invalid request body", null),
+        error.Invalid => errorResponse(gpa, .bad_request, "Invalid request body", s.diag.message()),
         error.PursuitNotFound => errorResponse(gpa, .not_found, "Pursuit not found", null),
         error.MilestoneNotFound => errorResponse(gpa, .not_found, "Milestone not found", null),
         error.OutOfMemory => oomRaw(gpa),
@@ -742,4 +747,51 @@ test "acceptance: GET /pursuits percent-decodes query values and ignores unknown
     defer parsed.deinit();
     try testing.expectEqual(@as(i64, 1), parsed.value.object.get("total").?.integer);
     try testing.expectEqual(@as(i64, 10), parsed.value.object.get("limit").?.integer);
+}
+
+test "acceptance: 400 responses carry details naming the failing field" {
+    const path = "/tmp/tt-acc-details.json";
+    var s = try freshStore(path);
+    defer s.deinit();
+    defer std.Io.Dir.cwd().deleteFile(testIo(), path) catch {};
+
+    // Store validation: the missing field is named.
+    const missing = try req(&s, .POST, "/pursuits", "{\"type\":\"training\"}");
+    defer testing.allocator.free(missing.body);
+    try testing.expectEqual(std.http.Status.bad_request, missing.status);
+    const mp = try json.parseFromSlice(Value, testing.allocator, missing.body, .{});
+    defer mp.deinit();
+    try testing.expectEqualStrings("Invalid request body", mp.value.object.get("message").?.string);
+    try testing.expectEqualStrings("Field 'name' is required", mp.value.object.get("details").?.string);
+
+    // Enum validation on PATCH: the allowed values are listed, as in the spec example.
+    const c = try req(&s, .POST, "/pursuits",
+        \\{"name":"X","type":"training","target_date":"2026-12-31T00:00:00Z","started_at":"2026-06-01T00:00:00Z"}
+    );
+    const cp = try json.parseFromSlice(Value, testing.allocator, c.body, .{});
+    testing.allocator.free(c.body);
+    const id = try testing.allocator.dupe(u8, cp.value.object.get("id").?.string);
+    cp.deinit();
+    defer testing.allocator.free(id);
+    const target = try std.fmt.allocPrint(testing.allocator, "/pursuits/{s}", .{id});
+    defer testing.allocator.free(target);
+
+    const bad_status = try req(&s, .PATCH, target, "{\"status\":\"done\"}");
+    defer testing.allocator.free(bad_status.body);
+    try testing.expectEqual(std.http.Status.bad_request, bad_status.status);
+    const bp = try json.parseFromSlice(Value, testing.allocator, bad_status.body, .{});
+    defer bp.deinit();
+    try testing.expectEqualStrings(
+        "Field 'status' must be one of: planned, in_progress, completed, expired",
+        bp.value.object.get("details").?.string,
+    );
+
+    // Malformed JSON is reported as such rather than as a field error.
+    const bad_json = try req(&s, .POST, "/pursuits", "{not json");
+    defer testing.allocator.free(bad_json.body);
+    try testing.expectEqual(std.http.Status.bad_request, bad_json.status);
+    const jp = try json.parseFromSlice(Value, testing.allocator, bad_json.body, .{});
+    defer jp.deinit();
+    try testing.expectEqualStrings("Invalid JSON body", jp.value.object.get("message").?.string);
+    try testing.expect(std.mem.startsWith(u8, jp.value.object.get("details").?.string, "Request body is not valid JSON"));
 }
