@@ -45,6 +45,21 @@ with Spectral, and explicitly writes **no implementation code** — the seam tha
   [[resource-implementer]].
 Source: `.claude/agents/oas-designer.md` · verified
 
+### Project board
+GitHub project 3 "Training Tracker" tracks every issue with a single-select
+`Status` field: Todo, In Progress, Done.
+- Ids: project `PVT_kwHOAth7oc4BiY_Z`; Status field
+  `PVTSSF_lAHOAth7oc4BiY_ZzhhROiM`; options Todo `f75ad846`, In Progress
+  `47fc9ee4`, Done `98236657`. Item ids come from
+  `gh project item-list 3 --owner jsmvaldivia --format json`.
+- In Progress: set by the [[resolve-issue]] skill with `gh project item-edit`
+  when work on an issue starts.
+- Done: no agent code. The project's built-in workflow "Item closed → set
+  Status: Done" is enabled in the project settings on github.com (a one-time
+  manual step); the PR body's `Closes #N` closes the issue on merge, which
+  moves the card.
+Source: jsmvaldivia, 2026-09-05 · asserted (the built-in workflow toggle is set on github.com, not in this repo)
+
 ### gate.sh (script)
 The local gate: every deterministic check, in order, in one process, with a
 machine-readable result. Agents judge; this script executes.
