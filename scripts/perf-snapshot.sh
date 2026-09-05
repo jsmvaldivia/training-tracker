@@ -24,9 +24,11 @@ platform=$(echo "$snapshot" | jq -r .platform)
 touch "$HISTORY"
 
 # Metrics and their direction: 1 = lower is better, -1 = higher is better.
+# p50 is compared; p99 is recorded but not compared — at 2000 requests it
+# swings about 30 % between identical runs, which is above the threshold.
 metrics='[
-  ["startup_wall_ms", 1], ["read_rps", -1], ["read_p99_ms", 1],
-  ["write_rps", -1], ["write_p99_ms", 1], ["rss_idle_kb", 1], ["binary_bytes", 1]
+  ["startup_wall_ms", 1], ["read_rps", -1], ["read_p50_ms", 1],
+  ["write_rps", -1], ["write_p50_ms", 1], ["rss_idle_kb", 1], ["binary_bytes", 1]
 ]'
 
 report=$(jq -n --argjson snap "$snapshot" --argjson metrics "$metrics" \

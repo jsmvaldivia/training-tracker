@@ -103,7 +103,8 @@ store-load time on its `listening on` line), read and write
 throughput with p50/p99 latency (`oha`, one connection per request because
 the server keeps none alive), RSS idle and after each load, and binary size.
 `scripts/perf-snapshot.sh` — the gate's `perf` step — compares a snapshot
-with the median of the last five on the same platform in
+(startup, throughput, p50, idle RSS, binary size; p99 is recorded, not
+compared) with the median of the last five on the same platform in
 `perf-snapshots.jsonl`, fails on a regression above 25 %, and appends the
 passing snapshot; commit that line with the change that produced it.
 
