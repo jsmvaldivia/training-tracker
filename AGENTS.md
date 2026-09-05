@@ -19,8 +19,10 @@ mise exec -- ./scripts/dev.sh
 Use `mise exec -- <command>` for the commands below when the pinned tools are
 not already on PATH. Setup installs locked dependencies and Chromium; verify
 runs OpenAPI lint, Zig formatting and the full backend suite, frontend unit
-tests, and E2E tests. Stop the dev server first: verification needs port 3000
-and always starts a fresh frontend. Neither command modifies `api/data.json`.
+tests, the mocked E2E suite, and the live full-stack E2E suite. Stop the dev
+server first: verification needs port 3000 and always starts a fresh
+frontend; the live suite takes 8081 and 3100. Neither command modifies
+`api/data.json`.
 See `docs/setup.md` for Linux prerequisites and machine migration.
 
 ## Architecture decisions (settled — don't re-litigate)
@@ -68,6 +70,7 @@ bun dev            # :3000, proxies /api -> :8080
 bun test:unit      # bun test src
 bun test:e2e       # Playwright, headless; starts `bun dev` itself
 bun test:e2e:ui    # interactive debugging
+bun test:e2e:live  # full stack: real API on a scratch store (scripts/e2e-live.sh)
 ```
 
 - Tailwind compiles in-process via `bun-plugin-tailwind` (`web/bunfig.toml`).
@@ -75,6 +78,11 @@ bun test:e2e:ui    # interactive debugging
   generated CSS file.
 - E2E specs live in `web/e2e/*.spec.ts` and mock the API with route
   interception — they do not need the Zig server running.
+- Live specs live in `web/e2e-live/*.spec.ts` and use no mocks. Run them only
+  through `bun test:e2e:live` (or `scripts/e2e-live.sh`), which builds the API,
+  starts it on :8081 with a scratch copy of the seed, starts the web server on
+  :3100, and removes both on exit. Keep them few: lifecycle, persistence, and
+  rollback flows; filters, layout, and accessibility stay in the mocked suite.
 - The `SessionStart` hook in `.claude/settings.json` calls shared setup in
   Claude remote sessions only. Pinned tools must already be on PATH. Local
   sessions use the explicit setup command above; there is no automatic install.
@@ -87,4 +95,7 @@ bun test:e2e:ui    # interactive debugging
 
 - Conventional Commits (`feat:`, `fix:`, `chore:`, `refactor:`, `docs:`, `test:`).
 - Never add `Co-Authored-By` or any Claude/Anthropic attribution line.
-- Run `zig build test -j1` and `bun test:e2e` before committing changes in their area.
+- Run `zig build test -j1`, `bun test:e2e`, and `bun test:e2e:live` before
+  committing changes in their area. The live run is the gate for anything
+  that touches `openapi.yaml`, `web/src/api.ts`, or `web/server.ts`.
+  `scripts/gate.sh` runs all of them in order.

@@ -20,12 +20,12 @@ not a test.
 | 2. Backend HTTP integration | `zig build test:http` (in `api/`) | real server on a thread, temp data file | seconds | in place |
 | 3. Frontend unit | `bun test:unit` | pure hooks/helpers in `src/**/*.test.ts` | ms | in place |
 | 4. UI E2E, mocked API | `bun test:e2e` | Bun dev server, `/api/*` intercepted | ~10 s | in place, 51 specs |
-| 5. Full-stack E2E, real API | not wired yet | Bun proxy → Zig API on a scratch store | seconds | **the gap** |
+| 5. Full-stack E2E, real API | `bun test:e2e:live` | Bun proxy → Zig API on a scratch store | seconds | in place |
 
 Tiers 1 and 2 prove the backend honors `api/openapi.yaml`. Tiers 3 and 4
 prove the UI behaves given a contract-shaped response. Only tier 5 proves the
-two halves agree. Until it exists, a contract drift between `openapi.yaml`
-and the hand-written client in `src/api.ts` is caught by nobody.
+two halves agree: a contract drift between `openapi.yaml` and the
+hand-written client in `src/api.ts` fails there and nowhere else.
 
 ## Tier 4 today: mocked E2E
 
@@ -41,31 +41,40 @@ Keep this tier fast and deterministic. It is the tier that runs on every
 change; it should never depend on the clock beyond relative fixture dates or
 on a process outside Bun.
 
-## Tier 5: what it takes
+## Tier 5: the live suite
 
-The server already supports the two overrides the tier needs:
+`bun test:e2e:live` runs `scripts/e2e-live.sh`, which:
 
-- `PORT` selects the listen port (default 8080).
-- `DATA_PATH` selects the JSON store (default `data.json`).
+1. Builds the API and copies `api/data.seed.json` into a fresh temp directory.
+2. Starts the API on `:8081` with `DATA_PATH` pointing at that copy.
+3. Starts `bun server.ts` on `:3100` with `BACKEND_URL=http://127.0.0.1:8081`.
+4. Runs `playwright.live.config.ts` (`testDir: e2e-live`, one worker, no
+   `webServer`, no route mocks).
+5. Stops both servers and deletes the temp directory — on success, failure,
+   and Ctrl-C.
 
-The Bun proxy honors `BACKEND_URL`. So a full-stack run is:
+`api/data.json` is never read or written. Ports come from `API_PORT` and
+`WEB_PORT`; the script refuses to start when one is held. Extra arguments go
+to Playwright: `bun test:e2e:live -g lifecycle`, `bun test:e2e:live --ui`.
 
-1. Copy `api/data.seed.json` to a scratch path.
-2. Start the API with `PORT=8081 DATA_PATH=<scratch> zig build run`.
-3. Start the web server with `BACKEND_URL=http://127.0.0.1:8081 bun dev`.
-4. Run a separate Playwright project (`e2e-live/`) with no route mocks.
-5. Delete the scratch file.
+Specs: `smoke` (the seed renders), `status-lifecycle`, `milestone-achievement`,
+and `rollback` (a real 500 — the spec makes the store directory read-only for
+one request, so the API's flush fails). `e2e-live/support/api.ts` seeds and
+reads records through the proxy with unique names, so every spec asserts
+through the UI and then through `GET /pursuits/{id}`.
 
-Design rules for the live suite when it is written:
+Rules:
 
-- One scratch store per run, reset from the seed. Never point at `api/data.json`.
-- Assert through the UI and then through the API (`GET /pursuits/{id}`), so
-  a test proves persistence, not just an optimistic render.
-- Cover the create → in_progress → completed lifecycle and milestone
-  achievement end to end. Filters, timeline layout, and accessibility stay in
-  tier 4; they do not need a real backend.
-- Keep it small. Ten flows that exercise the real store beat a copy of the
-  mocked suite.
+- One scratch store per run, shared by all specs in the run. Seed what a spec
+  needs with a unique name; never assume the seed is the whole store.
+- Assert through the UI and then through the API, so a test proves
+  persistence, not just an optimistic render.
+- Keep it small. Lifecycle, persistence, and rollback flows live here;
+  filters, timeline layout, and accessibility stay in tier 4.
+
+Debugging: the HTML report lands in `playwright-report-live/`; traces are kept
+on failure. `bun test:e2e:live --ui` opens the Playwright UI against the live
+servers.
 
 When the store moves to SQLite, only steps 1 and 5 change: the scratch store
 becomes a temp database file.

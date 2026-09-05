@@ -84,6 +84,8 @@ Unknown routes return a JSON `404`.
 cd web
 bun install --frozen-lockfile
 bun dev             # dev server with HMR on http://127.0.0.1:3000
+bun test:e2e        # UI specs against a mocked API (Playwright)
+bun test:e2e:live   # full stack: real API on a scratch store, no mocks
 ```
 
 Open http://127.0.0.1:3000 — the page reads backend liveness via the proxied

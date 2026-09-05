@@ -24,4 +24,6 @@ bun -e '
 # Imported store tests occur in multiple binaries and share /tmp paths.
 (cd api && zig fmt --check . && zig build test -j1)
 (cd web && bun test:unit && CI=1 PORT=3000 PLAYWRIGHT_HTML_OPEN=never bun test:e2e --reporter=line)
+# Full stack against a scratch store: real API on :8081, web on :3100.
+CI=1 ./scripts/e2e-live.sh
 echo "All verification gates passed."
