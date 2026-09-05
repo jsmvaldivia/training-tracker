@@ -1,0 +1,16 @@
+# Schemathesis configuration for the contract job (issue #36, .github/workflows/contract.yml).
+# Run from the repo root: uvx schemathesis run api/openapi.yaml --url http://127.0.0.1:8080
+
+[[operations]]
+# GET /pursuits ignores query keys the contract does not name (`?sort=x` is
+# not an error). Schemathesis' negative test injects an unknown key and expects
+# a 4xx, which is an opinion the contract does not share. The check stays on
+# for every other operation, where a wrong-typed body must be rejected.
+include-name = "GET /pursuits"
+checks.negative_data_rejection.enabled = false
+
+[phases.coverage]
+# The unsupported-method probe. QUERY is left out: std.http.Server in Zig 0.16
+# does not recognise the draft QUERY method and closes the connection before
+# any handler runs, so the probe would report a network error, not a 405.
+unexpected-methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE"]
