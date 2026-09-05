@@ -6,7 +6,7 @@ import { PursuitCard } from './components/PursuitCard';
 import { PursuitDetailPanel } from './components/PursuitDetailPanel';
 import { PursuitForm } from './components/PursuitForm';
 import { TimelineView } from './components/TimelineView';
-import { toCreateBody, toIsoDate } from './pursuitForm';
+import { toCreateBody, toIsoDate, toUpdatePatch } from './pursuitForm';
 import type { PursuitFormValues } from './pursuitForm';
 
 export function App() {
@@ -35,6 +35,7 @@ function AppContent() {
   const [filterType, setFilterType] = useState<'all' | 'certification' | 'training'>('all');
   const [selectedPursuitId, setSelectedPursuitId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   const filteredPursuits = pursuits.filter((p) => {
     if (filterType !== 'all' && p.type !== filterType) return false;
@@ -75,6 +76,13 @@ function AppContent() {
   const handleCreate = async (values: PursuitFormValues) => {
     const created = await createPursuit(toCreateBody(values));
     return created !== null;
+  };
+
+  const handleEdit = async (values: PursuitFormValues) => {
+    if (!selectedPursuit) return false;
+    const patch = toUpdatePatch(values, selectedPursuit);
+    if (Object.keys(patch).length === 0) return true; // nothing to send
+    return updatePursuit(selectedPursuit.id, patch);
   };
 
   return (
@@ -131,12 +139,21 @@ function AppContent() {
         onClose={() => setSelectedPursuitId(null)}
         onToggleMilestone={handleToggleMilestone}
         onStatusChange={handleStatusChange}
+        onEdit={() => setEditing(true)}
         onDelete={handleDelete}
         onAddMilestone={handleAddMilestone}
         onDeleteMilestone={handleDeleteMilestone}
       />
 
       {creating && <PursuitForm onSubmit={handleCreate} onClose={() => setCreating(false)} />}
+      {editing && selectedPursuit && (
+        <PursuitForm
+          key={selectedPursuit.id}
+          pursuit={selectedPursuit}
+          onSubmit={handleEdit}
+          onClose={() => setEditing(false)}
+        />
+      )}
     </div>
   );
 }

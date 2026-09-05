@@ -8,6 +8,7 @@ import {
   Circle,
   Award,
   BookOpen,
+  Pencil,
   Plus,
   Trash2 } from
 'lucide-react';
@@ -24,6 +25,8 @@ interface PursuitDetailPanelProps {
   // panel does not stamp achieved_at / completed_at — the server does.
   onToggleMilestone: (milestoneId: string) => void;
   onStatusChange: (status: PursuitStatus) => void;
+  // Opens the edit form; the owner renders it and applies the patch.
+  onEdit: () => void;
   // Called once the user has confirmed; the owner removes and closes.
   onDelete: () => void;
   // `date` is the date input value (YYYY-MM-DD); the owner maps it to ISO.
@@ -35,6 +38,7 @@ export function PursuitDetailPanel({
   onClose,
   onToggleMilestone,
   onStatusChange,
+  onEdit,
   onDelete,
   onAddMilestone,
   onDeleteMilestone
@@ -93,9 +97,18 @@ export function PursuitDetailPanel({
         <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-8">
           {/* Header Section */}
           <div className="flex flex-col gap-4">
-            <h2 className="text-2xl font-bold text-slate-900 leading-tight">
-              {pursuit.name}
-            </h2>
+            <div className="flex items-start justify-between gap-3">
+              <h2 className="text-2xl font-bold text-slate-900 leading-tight">
+                {pursuit.name}
+              </h2>
+              <button
+                type="button"
+                onClick={onEdit}
+                className="flex-shrink-0 flex items-center gap-1 h-8 px-2.5 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-md hover:bg-slate-50 transition-colors">
+                <Pencil className="w-3.5 h-3.5" />
+                Edit
+              </button>
+            </div>
 
             <div className="flex flex-wrap items-center gap-3">
               <select

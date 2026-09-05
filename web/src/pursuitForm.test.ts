@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import type { Pursuit } from './types';
-import { formValuesFor, parseTags, toCreateBody, toDateInput, toIsoDate } from './pursuitForm';
+import { formValuesFor, parseTags, toCreateBody, toDateInput, toIsoDate, toUpdatePatch } from './pursuitForm';
 
 function pursuit(over: Partial<Pursuit> = {}): Pursuit {
   return {
@@ -97,5 +97,32 @@ describe('toCreateBody', () => {
     expect(body.expires_at).toBe('2028-01-01T00:00:00Z');
     expect(body.tags).toEqual(['a', 'b']);
     expect(body.description).toBe('notes');
+  });
+});
+
+describe('toUpdatePatch', () => {
+  const original = pursuit({ tags: ['a', 'b'], description: 'notes', expires_at: '2028-01-01T00:00:00Z' });
+
+  it('is empty when nothing changed', () => {
+    expect(toUpdatePatch(formValuesFor(original), original)).toEqual({});
+  });
+
+  it('contains only the fields that changed, mapped to the contract', () => {
+    const values = { ...formValuesFor(original), name: ' Renamed ', tags: 'b, c', target_date: '2027-01-31' };
+    expect(toUpdatePatch(values, original)).toEqual({
+      name: 'Renamed',
+      tags: ['b', 'c'],
+      target_date: '2027-01-31T00:00:00Z',
+    });
+  });
+
+  it('sends an empty description when the notes are cleared', () => {
+    const values = { ...formValuesFor(original), description: '' };
+    expect(toUpdatePatch(values, original)).toEqual({ description: '' });
+  });
+
+  it('leaves expires_at alone when the input is cleared (the API cannot unset it)', () => {
+    const values = { ...formValuesFor(original), expires_at: '' };
+    expect(toUpdatePatch(values, original)).toEqual({});
   });
 });

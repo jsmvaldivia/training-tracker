@@ -1,4 +1,4 @@
-import type { PursuitCreate } from './api';
+import type { PursuitCreate, PursuitUpdate } from './api';
 import type { Pursuit, PursuitType } from './types';
 
 // Pure mapping between the pursuit form (issues #20, #23) and the contract's
@@ -44,6 +44,27 @@ export function formValuesFor(pursuit?: Pursuit): PursuitFormValues {
     tags: pursuit?.tags.join(', ') ?? '',
     description: pursuit?.description ?? '',
   };
+}
+
+// PursuitUpdate body: only the fields the user changed, so an untouched field
+// is never re-sent and an unchanged form produces an empty patch (no request).
+// A cleared expires_at is left alone: the contract has no way to unset a
+// field (a null is rejected), and re-sending the old value is a no-op anyway.
+export function toUpdatePatch(values: PursuitFormValues, original: Pursuit): PursuitUpdate {
+  const patch: PursuitUpdate = {};
+  const name = values.name.trim();
+  if (name !== original.name) patch.name = name;
+  if (values.type !== original.type) patch.type = values.type;
+  const description = values.description.trim();
+  if (description !== (original.description ?? '')) patch.description = description;
+  const tags = parseTags(values.tags);
+  if (tags.join('\u0000') !== original.tags.join('\u0000')) patch.tags = tags;
+  if (values.started_at !== toDateInput(original.started_at)) patch.started_at = toIsoDate(values.started_at);
+  if (values.target_date !== toDateInput(original.target_date)) patch.target_date = toIsoDate(values.target_date);
+  if (values.expires_at && values.expires_at !== toDateInput(original.expires_at)) {
+    patch.expires_at = toIsoDate(values.expires_at);
+  }
+  return patch;
 }
 
 // PursuitCreate body: required fields always, optionals only when filled so

@@ -105,18 +105,21 @@ export interface OptimisticUpdate<T> {
 
 // Show the optimistic guess, call the server, reconcile on success, and roll
 // back to the snapshot + report on failure. `setPursuits` and `onError` are
-// injected so this is testable without React.
+// injected so this is testable without React. Resolves true on success so a
+// caller with its own UI (the edit form) knows whether to close.
 export async function runOptimisticUpdate<T>(
   update: OptimisticUpdate<T>,
   setPursuits: (pursuits: Pursuit[]) => void,
   onError?: (message: string) => void
-): Promise<void> {
+): Promise<boolean> {
   setPursuits(update.optimistic);
   try {
     const result = await update.call();
     setPursuits(update.reconcile(result));
+    return true;
   } catch (err) {
     setPursuits(update.snapshot);
     onError?.(err instanceof Error ? err.message : 'Update failed');
+    return false;
   }
 }

@@ -101,6 +101,20 @@ describe('runOptimisticUpdate', () => {
     expect(states[1][0].milestones[0].achieved_at).toBe('2026-06-21T10:00:00Z'); // reconciled
   });
 
+  it('resolves true on success and false after a rollback', async () => {
+    const ok = await runOptimisticUpdate(
+      { optimistic, snapshot: base, call: () => Promise.resolve(milestone('m1')), reconcile: () => optimistic },
+      () => {}
+    );
+    const failed = await runOptimisticUpdate(
+      { optimistic, snapshot: base, call: () => Promise.reject(new Error('x')), reconcile: () => optimistic },
+      () => {},
+      () => {}
+    );
+    expect(ok).toBe(true);
+    expect(failed).toBe(false);
+  });
+
   it('rolls back to the snapshot and reports the error message on failure', async () => {
     const states: Pursuit[][] = [];
     const setPursuits = (p: Pursuit[]) => states.push(p);

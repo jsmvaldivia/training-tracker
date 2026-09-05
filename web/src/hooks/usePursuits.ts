@@ -36,7 +36,8 @@ export interface UsePursuitsResult {
     milestoneId: string,
     patch: MilestoneUpdate
   ) => Promise<void>;
-  updatePursuit: (pursuitId: string, patch: PursuitUpdate) => Promise<void>;
+  // Resolves true when the server accepted the change.
+  updatePursuit: (pursuitId: string, patch: PursuitUpdate) => Promise<boolean>;
   // Resolves to the created pursuit, or null after a failure was reported.
   createPursuit: (data: PursuitCreate) => Promise<Pursuit | null>;
   deletePursuit: (pursuitId: string) => Promise<void>;
@@ -106,7 +107,7 @@ export function usePursuits(options: UsePursuitsOptions = {}): UsePursuitsResult
     async (pursuitId: string, patch: PursuitUpdate) => {
       const snapshot = pursuitsRef.current;
       const optimistic = applyPursuitPatch(snapshot, pursuitId, patch);
-      await runOptimisticUpdate(
+      return runOptimisticUpdate(
         {
           optimistic,
           snapshot,
