@@ -123,6 +123,8 @@ paths:
                 total: 2
                 limit: 50
                 offset: 0
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
 
     post:
       operationId: createPursuit
@@ -201,6 +203,8 @@ paths:
               example:
                 status: 500
                 message: Failed to persist change
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
 
   /pursuits/{id}:
     get:
@@ -249,6 +253,8 @@ paths:
               example:
                 status: 404
                 message: Pursuit not found
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
 
     patch:
       operationId: updatePursuit
@@ -329,6 +335,8 @@ paths:
               example:
                 status: 500
                 message: Failed to persist change
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
 
     delete:
       operationId: deletePursuit
@@ -365,6 +373,8 @@ paths:
               example:
                 status: 500
                 message: Failed to persist change
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
 
   /pursuits/{id}/milestones:
     post:
@@ -431,6 +441,8 @@ paths:
               example:
                 status: 500
                 message: Failed to persist change
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
 
   /pursuits/{id}/milestones/{milestoneId}:
     patch:
@@ -512,6 +524,8 @@ paths:
               example:
                 status: 500
                 message: Failed to persist change
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
     delete:
       operationId: deleteMilestone
       summary: Delete a milestone
@@ -554,8 +568,21 @@ paths:
               example:
                 status: 500
                 message: Failed to persist change
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
 
 components:
+  responses:
+    MethodNotAllowed:
+      description: The path exists but does not support this HTTP method
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            status: 405
+            message: Method not allowed
+
   schemas:
     Health:
       type: object
