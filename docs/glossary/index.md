@@ -18,6 +18,11 @@ Map of project knowledge. One line per entry; content lives in the topic pages.
 ## architecture
 - [resource-implementer](architecture.md#resource-implementer-agent) — agent: TDD-implements one backend resource (HTTP→persistence)
 - [oas-designer](architecture.md#oas-designer-agent) — agent: designs the OAS, writes no code
+- [issue-triager](architecture.md#issue-triager-agent) — agent: read-only brief with one verdict (READY / SPEC_CHANGE / NEEDS_CONTEXT)
+- [test-author](architecture.md#test-author-agent) — agent: failing outer tests from a brief, proves red
+- [web-implementer](architecture.md#web-implementer-agent) — agent: makes the e2e specs pass in `web/src`, keeps `api.ts` mirroring the spec
+- [evaluator](architecture.md#evaluator-agent) — agent: runs the gate, judges the diff, PASS or FAIL with findings
+- [resolve-issue](architecture.md#resolve-issue-skill--workflow) — skill + workflow: `/resolve-issue N`, issue to PR
 - [Project board](architecture.md#project-board) — GitHub project 3: In Progress from the skill, Done from the built-in workflow
 - [gate.sh](architecture.md#gatesh-script) — script: all deterministic checks, writes `.gate/result.json`
 - [coverage gate](architecture.md#coverage-gate) — Bun threshold for web, diff rule for api

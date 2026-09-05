@@ -45,6 +45,79 @@ with Spectral, and explicitly writes **no implementation code** — the seam tha
   [[resource-implementer]].
 Source: `.claude/agents/oas-designer.md` · verified
 
+### issue-triager (agent)
+Read-only first step of the issue-resolution workflow: reads one issue, the
+glossary (including [discrepancies](discrepancies.md)), the spec, and the code
+it names, and returns a brief with fixed sections and one verdict.
+- Code anchor: `.claude/agents/issue-triager.md`
+- Verdicts: `READY` (spec and glossary cover it — code-vs-spec divergences
+  included), `SPEC_CHANGE` (names the resource and the missing operation,
+  field, or status code), `NEEDS_CONTEXT` (typed gaps: domain, architecture,
+  spec; a question in the issue is always a gap).
+- Brief sections: issue, goal, glossary terms, layers (with backend resource
+  names), seams (test files), acceptance criteria, verdict detail. Implementers
+  treat the seams and criteria as pre-approved.
+- Tools: Read, Grep, Glob, Bash for `gh`/`git` reads. Writes nothing.
+- Used by: [[resolve-issue]] (skill).
+Source: jsmvaldivia, 2026-09-05 · verified
+
+### test-author (agent)
+Writes the failing outer tests for a brief — Playwright specs from the
+acceptance criteria, Zig HTTP/acceptance tests from the spec — and proves
+each is red for the feature's reason. Unit tests belong to the implementers.
+- Code anchor: `.claude/agents/test-author.md`
+- May write: `web/e2e/*.spec.ts`, `web/e2e/support/*`, `web/e2e-live/*.spec.ts`,
+  `api/src/http_test*.zig`, `api/src/acceptance_*.zig`, the test lists in
+  `api/build.zig`. Never production code, never `api/openapi.yaml`.
+- Stops and reports: a test that passes before implementation, a criterion
+  it cannot test.
+- Used by: `.claude/workflows/build-issue.js`, phase Tests.
+Source: jsmvaldivia, 2026-09-05 · verified
+
+### web-implementer (agent)
+Frontend counterpart of [[resource-implementer]]: makes the failing e2e specs
+pass in `web/src/**` with a unit-test-first loop, keeps `web/src/api.ts` a
+hand-written mirror of the spec, and addresses evaluator findings on a retry.
+- Code anchor: `.claude/agents/web-implementer.md`
+- Reads only: `web/e2e/**`, `web/e2e-live/**`, `api/**`, `api/openapi.yaml`.
+  A spec it believes wrong is reported, not edited.
+- Gates: `bun test:unit` (coverage threshold), `bun test:e2e`, and
+  `bun test:e2e:live` when the flow crosses the API. Never in parallel with
+  resource-implementer (ports 3000/3100, shared `/tmp` Zig paths).
+Source: jsmvaldivia, 2026-09-05 · verified
+
+### evaluator (agent)
+Last step before the PR: runs [[gate.sh]], reads `.gate/result.json` and the
+diff against `main`, and returns `PASS` or `FAIL` with findings. Fixes
+nothing, so a retry round reflects what the implementers actually did.
+- Code anchor: `.claude/agents/evaluator.md`
+- Rules: every gate step passed or skipped for a known reason; every
+  acceptance criterion maps to a test; every changed production file has a
+  test that exercises it ([[coverage gate]]); `api.ts` mirrors a changed
+  spec; no test skipped, disabled, or weakened; no spec edit after triage;
+  `api/data.json` untouched.
+- Finding shape: file, line, what is wrong, what a fix must satisfy.
+- Tools: Read, Grep, Glob, Bash for `scripts/gate.sh` and `git diff` only.
+Source: jsmvaldivia, 2026-09-05 · verified
+
+### resolve-issue (skill + workflow)
+Entry point of the issue-resolution workflow: `/resolve-issue N`.
+- Code anchors: `.claude/skills/resolve-issue/SKILL.md` (interactive half),
+  `.claude/workflows/build-issue.js` (autonomous half, workflow `build-issue`).
+- Interactive half, main session: board card to In Progress and
+  `needs-triage` removed; [[issue-triager]]; `NEEDS_CONTEXT` → `grill-me` →
+  re-triage; `SPEC_CHANGE` → `grill-me` if a term is missing → [[oas-designer]]
+  → `scripts/validate-oas.sh` → re-triage (spec frozen after lint); `READY`
+  → worktree → Workflow.
+- Autonomous half, Workflow script with `args { issue, brief, resources, web }`:
+  [[test-author]]; then per backend resource [[resource-implementer]], then
+  [[web-implementer]], strictly in series; then [[evaluator]]. `FAIL` feeds
+  the findings back and repeats the implement/evaluate pair, at most three
+  rounds. Returns `{ verdict, rounds, findings }`.
+- Back in the main session: Conventional Commit, push, `gh pr create` with
+  `Closes #N` in the body.
+Source: jsmvaldivia, 2026-09-05 · verified
+
 ### Project board
 GitHub project 3 "Training Tracker" tracks every issue with a single-select
 `Status` field: Todo, In Progress, Done.
