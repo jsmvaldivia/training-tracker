@@ -22,9 +22,9 @@ const Value = json.Value;
 const log = std.log.scoped(.handler);
 
 /// Flush the store to disk before reporting mutation success. The mutation has
-/// already changed the in-memory tree; on failure we return 500 so the client
-/// does not treat the change as durable. A later successful flush may still
-/// persist that in-memory state.
+/// already changed the in-memory tree; on failure the store reloads from disk
+/// so memory matches what the client was told, then we return 500 so the
+/// client does not treat the change as durable.
 fn persistOr500(gpa: Allocator, s: *Store) Allocator.Error!?Response {
     s.flush() catch |err| {
         // Skip the log in test builds: the failure-path test deliberately forces
@@ -33,6 +33,10 @@ fn persistOr500(gpa: Allocator, s: *Store) Allocator.Error!?Response {
         // must surface even though the client already got its 500.
         if (!builtin.is_test)
             log.err("failed to persist store to disk: {s}", .{@errorName(err)});
+        s.reload() catch |reload_err| {
+            if (!builtin.is_test)
+                log.err("failed to reload store after the failed flush: {s}", .{@errorName(reload_err)});
+        };
         return try errorResponse(gpa, .internal_server_error, "Failed to persist change", null);
     };
     return null;
@@ -595,6 +599,15 @@ test "acceptance: mutation returns 500 when persistence fails" {
     defer parsed.deinit();
     try testing.expectEqual(@as(i64, 500), parsed.value.object.get("status").?.integer);
     try testing.expectEqualStrings("Failed to persist change", parsed.value.object.get("message").?.string);
+
+    // The rejected change must not linger in memory: a client that got a 500
+    // rolled back, so a later GET must agree with the disk, not with the
+    // failed mutation (which a later successful flush would otherwise persist).
+    const list = try req(&s, .GET, "/pursuits", "");
+    defer testing.allocator.free(list.body);
+    const lp = try json.parseFromSlice(Value, testing.allocator, list.body, .{});
+    defer lp.deinit();
+    try testing.expectEqual(@as(i64, 0), lp.value.object.get("total").?.integer);
 }
 
 test "non-pursuit path returns null (falls through to other routes)" {
