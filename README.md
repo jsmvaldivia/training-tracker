@@ -94,6 +94,21 @@ call it). The backend URL is configurable with `BACKEND_URL`
 (default `http://127.0.0.1:8080`); the frontend port with `PORT` (default
 `3000`).
 
+## Performance snapshot
+
+`scripts/bench.sh` measures the Zig API on a ReleaseSafe build against a
+scratch copy of the seed: startup (spawn to first `/health` 200, plus the
+server's own store-load time on its `listening on` line), read and write
+throughput with p50/p99 latency (`oha`, one connection per request because
+the server keeps none alive), RSS idle and after each load, and binary size.
+`scripts/perf-snapshot.sh` — the gate's `perf` step — compares a snapshot
+with the median of the last five on the same platform in
+`perf-snapshots.jsonl`, fails on a regression above 25 %, and appends the
+passing snapshot; commit that line with the change that produced it.
+
+Reference sizes (darwin-arm64, Zig 0.16.0): ReleaseSafe 658 KB, ReleaseSmall
+273 KB — the latter is the candidate for the container image.
+
 ## Project layout
 
 ```

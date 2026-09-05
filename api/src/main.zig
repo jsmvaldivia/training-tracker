@@ -37,6 +37,11 @@ pub fn main() !void {
     defer threaded.deinit();
     const io = threaded.io();
 
+    // Startup timer (issue #35): from here — the process is microseconds old —
+    // to the listen call. Dominated by loading the store; printed on the
+    // `listening on` line so scripts/bench.sh can read it.
+    const started = std.Io.Clock.Timestamp.now(io, .awake);
+
     // Allow port and data path override via environment variables for testing.
     const port = blk: {
         const port_str_ptr = std.c.getenv("PORT") orelse break :blk default_port;
@@ -55,7 +60,8 @@ pub fn main() !void {
     var server = try address.listen(io, .{ .reuse_address = true });
     defer server.deinit(io);
 
-    log.info("listening on http://127.0.0.1:{d} (data: {s})", .{ port, data_path });
+    const startup_ns: f64 = @floatFromInt(started.durationTo(std.Io.Clock.Timestamp.now(io, .awake)).raw.toNanoseconds());
+    log.info("listening on http://127.0.0.1:{d} (data: {s}, startup {d:.2} ms)", .{ port, data_path, startup_ns / std.time.ns_per_ms });
 
     while (true) {
         const stream = server.accept(io) catch |err| {
