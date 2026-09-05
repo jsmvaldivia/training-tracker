@@ -95,25 +95,12 @@ pub fn handle(
 // ---- Operations ----------------------------------------------------------
 
 fn listPursuits(gpa: Allocator, s: *Store, query: []const u8) Allocator.Error!Response {
-    var limit: usize = 50;
-    var offset: usize = 0;
-    var type_filter: ?[]const u8 = null;
-
-    var it = std.mem.splitScalar(u8, query, '&');
-    while (it.next()) |pair| {
-        if (pair.len == 0) continue;
-        const eq = std.mem.indexOfScalar(u8, pair, '=') orelse continue;
-        const key = pair[0..eq];
-        const val = pair[eq + 1 ..];
-        if (std.mem.eql(u8, key, "limit")) {
-            const parsed = std.fmt.parseInt(usize, val, 10) catch continue;
-            limit = std.math.clamp(parsed, 1, 100);
-        } else if (std.mem.eql(u8, key, "offset")) {
-            offset = std.fmt.parseInt(usize, val, 10) catch 0;
-        } else if (std.mem.eql(u8, key, "type")) {
-            type_filter = val;
-        }
-    }
+    // `type` is percent-decoded into this buffer; `params.type_filter` borrows it.
+    var type_buf: [64]u8 = undefined;
+    const params = switch (parseListParams(query, &type_buf)) {
+        .ok => |p| p,
+        .invalid => |details| return errorResponse(gpa, .bad_request, "Invalid query parameter", details),
+    };
 
     // Request-scoped arena: owns both the store's transient `matched` array and
     // the response envelope, all freed when this handler returns.
@@ -121,7 +108,7 @@ fn listPursuits(gpa: Allocator, s: *Store, query: []const u8) Allocator.Error!Re
     defer arena.deinit();
     const a = arena.allocator();
 
-    const res = s.list(a, type_filter, limit, offset) catch return oomRaw(gpa);
+    const res = s.list(a, params.type_filter, params.limit, params.offset) catch return oomRaw(gpa);
 
     // Build the PursuitsListResponse envelope as a Value.
     var arr = json.Array.init(a);
@@ -199,6 +186,72 @@ fn deleteMilestone(gpa: Allocator, s: *Store, pid: []const u8, mid: []const u8) 
     s.deleteMilestone(pid, mid) catch |err| return mapStoreError(gpa, err);
     if (try persistOr500(gpa, s)) |r| return r;
     return .{ .status = .no_content, .body = "" };
+}
+
+// ---- Query parsing --------------------------------------------------------
+
+const ListParams = struct {
+    limit: usize = 50,
+    offset: usize = 0,
+    type_filter: ?[]const u8 = null,
+};
+
+const ListParamsResult = union(enum) {
+    ok: ListParams,
+    /// The `details` text for the 400: names the parameter and its rule.
+    invalid: []const u8,
+};
+
+const limit_rule = "Query parameter 'limit' must be an integer between 1 and 100";
+const offset_rule = "Query parameter 'offset' must be an integer of 0 or more";
+const type_rule = "Query parameter 'type' must be one of: certification, training";
+
+/// Parses `GET /pursuits` query parameters against the contract: `limit` in
+/// 1..100 (default 50), `offset` >= 0 (default 0), `type` a `PursuitType`.
+/// Out-of-range or malformed values are rejected — never clamped or coerced —
+/// so the response always reflects what the client asked for. Values are
+/// percent-decoded first; `type` is decoded into `type_buf`, which the
+/// returned `type_filter` borrows. Unknown keys are ignored.
+fn parseListParams(query: []const u8, type_buf: []u8) ListParamsResult {
+    var params: ListParams = .{};
+
+    var it = std.mem.splitScalar(u8, query, '&');
+    while (it.next()) |pair| {
+        if (pair.len == 0) continue;
+        const eq = std.mem.indexOfScalar(u8, pair, '=');
+        const raw_key = if (eq) |e| pair[0..e] else pair;
+        const raw_val = if (eq) |e| pair[e + 1 ..] else "";
+
+        var key_buf: [16]u8 = undefined;
+        // A key longer than any contract parameter cannot be one of them.
+        const key = percentDecode(&key_buf, raw_key) orelse continue;
+
+        if (std.mem.eql(u8, key, "limit")) {
+            var buf: [32]u8 = undefined;
+            const val = percentDecode(&buf, raw_val) orelse return .{ .invalid = limit_rule };
+            const n = std.fmt.parseInt(usize, val, 10) catch return .{ .invalid = limit_rule };
+            if (n < 1 or n > 100) return .{ .invalid = limit_rule };
+            params.limit = n;
+        } else if (std.mem.eql(u8, key, "offset")) {
+            var buf: [32]u8 = undefined;
+            const val = percentDecode(&buf, raw_val) orelse return .{ .invalid = offset_rule };
+            // parseInt(usize) already rejects a leading '-', an empty string,
+            // and anything non-numeric.
+            params.offset = std.fmt.parseInt(usize, val, 10) catch return .{ .invalid = offset_rule };
+        } else if (std.mem.eql(u8, key, "type")) {
+            const val = percentDecode(type_buf, raw_val) orelse return .{ .invalid = type_rule };
+            if (!store_mod.isPursuitType(val)) return .{ .invalid = type_rule };
+            params.type_filter = val;
+        }
+    }
+    return .{ .ok = params };
+}
+
+/// Percent-decodes `raw` into `buf`; null when `raw` cannot fit (decoding never
+/// grows a string, so a raw value longer than the buffer is simply too long).
+fn percentDecode(buf: []u8, raw: []const u8) ?[]const u8 {
+    if (raw.len > buf.len) return null;
+    return std.Uri.percentDecodeBackwards(buf, raw);
 }
 
 // ---- Routing helpers ------------------------------------------------------
@@ -610,4 +663,83 @@ test "Route.parse classifies the four shapes" {
     try testing.expectEqual(RouteKind.item, Route.parse("/pursuits/p_1").kind);
     try testing.expectEqual(RouteKind.milestones, Route.parse("/pursuits/p_1/milestones").kind);
     try testing.expectEqual(RouteKind.milestone_item, Route.parse("/pursuits/p_1/milestones/m_1").kind);
+}
+
+test "acceptance: GET /pursuits rejects an invalid limit query value with 400" {
+    const path = "/tmp/tt-acc-query-limit.json";
+    var s = try freshStore(path);
+    defer s.deinit();
+    defer std.Io.Dir.cwd().deleteFile(testIo(), path) catch {};
+
+    // The contract says 1 <= limit <= 100 — no clamping.
+    for ([_][]const u8{ "/pursuits?limit=0", "/pursuits?limit=101", "/pursuits?limit=ten", "/pursuits?limit=" }) |target| {
+        const r = try req(&s, .GET, target, "");
+        defer testing.allocator.free(r.body);
+        try testing.expectEqual(std.http.Status.bad_request, r.status);
+
+        const parsed = try json.parseFromSlice(Value, testing.allocator, r.body, .{});
+        defer parsed.deinit();
+        try testing.expectEqualStrings("Invalid query parameter", parsed.value.object.get("message").?.string);
+        try testing.expect(std.mem.indexOf(u8, parsed.value.object.get("details").?.string, "'limit'") != null);
+    }
+}
+
+test "acceptance: GET /pursuits rejects an invalid offset query value with 400" {
+    const path = "/tmp/tt-acc-query-offset.json";
+    var s = try freshStore(path);
+    defer s.deinit();
+    defer std.Io.Dir.cwd().deleteFile(testIo(), path) catch {};
+
+    for ([_][]const u8{ "/pursuits?offset=-1", "/pursuits?offset=x", "/pursuits?offset=" }) |target| {
+        const r = try req(&s, .GET, target, "");
+        defer testing.allocator.free(r.body);
+        try testing.expectEqual(std.http.Status.bad_request, r.status);
+
+        const parsed = try json.parseFromSlice(Value, testing.allocator, r.body, .{});
+        defer parsed.deinit();
+        try testing.expect(std.mem.indexOf(u8, parsed.value.object.get("details").?.string, "'offset'") != null);
+    }
+}
+
+test "acceptance: GET /pursuits rejects an unknown type query value with 400" {
+    const path = "/tmp/tt-acc-query-type.json";
+    var s = try freshStore(path);
+    defer s.deinit();
+    defer std.Io.Dir.cwd().deleteFile(testIo(), path) catch {};
+
+    for ([_][]const u8{ "/pursuits?type=nope", "/pursuits?type=" }) |target| {
+        const r = try req(&s, .GET, target, "");
+        defer testing.allocator.free(r.body);
+        try testing.expectEqual(std.http.Status.bad_request, r.status);
+
+        const parsed = try json.parseFromSlice(Value, testing.allocator, r.body, .{});
+        defer parsed.deinit();
+        try testing.expect(std.mem.indexOf(u8, parsed.value.object.get("details").?.string, "'type'") != null);
+    }
+}
+
+test "acceptance: GET /pursuits percent-decodes query values and ignores unknown keys" {
+    const path = "/tmp/tt-acc-query-decode.json";
+    var s = try freshStore(path);
+    defer s.deinit();
+    defer std.Io.Dir.cwd().deleteFile(testIo(), path) catch {};
+
+    const c1 = try req(&s, .POST, "/pursuits",
+        \\{"name":"a","type":"certification","target_date":"2026-12-31T00:00:00Z","started_at":"2026-06-01T00:00:00Z"}
+    );
+    testing.allocator.free(c1.body);
+    const c2 = try req(&s, .POST, "/pursuits",
+        \\{"name":"b","type":"training","target_date":"2026-12-31T00:00:00Z","started_at":"2026-06-01T00:00:00Z"}
+    );
+    testing.allocator.free(c2.body);
+
+    // "%63ertification" -> "certification", "%31%30" -> "10"; `sort` is not a contract parameter.
+    const r = try req(&s, .GET, "/pursuits?type=%63ertification&limit=%31%30&sort=name", "");
+    defer testing.allocator.free(r.body);
+    try testing.expectEqual(std.http.Status.ok, r.status);
+
+    const parsed = try json.parseFromSlice(Value, testing.allocator, r.body, .{});
+    defer parsed.deinit();
+    try testing.expectEqual(@as(i64, 1), parsed.value.object.get("total").?.integer);
+    try testing.expectEqual(@as(i64, 10), parsed.value.object.get("limit").?.integer);
 }

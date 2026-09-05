@@ -515,3 +515,34 @@ test "http: GET /pursuits/{id} for unknown id returns 404" {
 
     try testing.expectEqual(std.http.Status.not_found, resp.status);
 }
+
+test "http: GET /pursuits?limit=0 returns 400 with details naming the parameter" {
+    const port: u16 = 8098;
+    const data_path = "/tmp/tt-http-query-limit.json";
+
+    var server = try TestServer.start(testing.allocator, port, data_path);
+    defer server.shutdown();
+
+    var resp = try get(testing.allocator, port, "/pursuits?limit=0");
+    defer resp.deinit();
+
+    try testing.expectEqual(std.http.Status.bad_request, resp.status);
+
+    const parsed = try parseJson(testing.allocator, resp.body);
+    defer parsed.deinit();
+    try testing.expectEqual(@as(i64, 400), parsed.value.object.get("status").?.integer);
+    try testing.expect(std.mem.indexOf(u8, parsed.value.object.get("details").?.string, "'limit'") != null);
+}
+
+test "http: GET /pursuits?type=nope returns 400 instead of an empty list" {
+    const port: u16 = 8099;
+    const data_path = "/tmp/tt-http-query-type.json";
+
+    var server = try TestServer.start(testing.allocator, port, data_path);
+    defer server.shutdown();
+
+    var resp = try get(testing.allocator, port, "/pursuits?type=nope");
+    defer resp.deinit();
+
+    try testing.expectEqual(std.http.Status.bad_request, resp.status);
+}

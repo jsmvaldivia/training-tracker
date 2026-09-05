@@ -123,6 +123,16 @@ paths:
                 total: 2
                 limit: 50
                 offset: 0
+        "400":
+          description: A query parameter is out of range or not a valid value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                status: 400
+                message: Invalid query parameter
+                details: "Query parameter 'limit' must be an integer between 1 and 100"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
 

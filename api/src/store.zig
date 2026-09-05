@@ -422,6 +422,16 @@ const pursuit_types = [_][]const u8{ "certification", "training" };
 const statuses = [_][]const u8{ "planned", "in_progress", "completed", "expired" };
 const milestone_states = [_][]const u8{ "pending", "achieved" };
 
+/// True when `s` is a `PursuitType` enum value from the contract. Used by the
+/// handler to validate the `type` query filter with the same table the store
+/// applies to request bodies.
+pub fn isPursuitType(s: []const u8) bool {
+    for (pursuit_types) |t| {
+        if (std.mem.eql(u8, s, t)) return true;
+    }
+    return false;
+}
+
 // ---- Field validation helpers -------------------------------------------
 
 fn requireString(obj: ObjectMap, key: []const u8, min_len: usize, max_len: usize) ValidationError![]const u8 {
