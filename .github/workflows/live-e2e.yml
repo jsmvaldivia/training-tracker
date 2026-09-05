@@ -1,0 +1,72 @@
+# Live full-stack E2E (issue #15): builds the Zig API, runs it on a scratch
+# store behind the real Bun proxy, and drives it with the Playwright specs in
+# web/e2e-live/ — no route mocks. This is the job that catches drift between
+# api/openapi.yaml and the hand-written client in web/src/api.ts. Everything
+# runs through scripts/e2e-live.sh, the same command as locally.
+# Not a required check yet: promote it in the branch ruleset once it has been
+# stable for a few runs (issue #19).
+name: live-e2e
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "api/**"
+      - "web/**"
+      - "scripts/e2e-live.sh"
+      - "mise.toml"
+      - ".github/workflows/live-e2e.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "api/**"
+      - "web/**"
+      - "scripts/e2e-live.sh"
+      - "mise.toml"
+      - ".github/workflows/live-e2e.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      # Zig and Bun versions come from mise.toml — the single pin.
+      - uses: jdx/mise-action@v4
+        with:
+          cache: true
+
+      - name: Cache Zig build artifacts
+        uses: actions/cache@v6
+        with:
+          path: api/.zig-cache
+          key: zig-cache-${{ runner.os }}-${{ hashFiles('mise.toml', 'api/build.zig', 'api/build.zig.zon') }}
+
+      - name: Install web dependencies
+        working-directory: web
+        run: bun install --frozen-lockfile
+
+      - name: Install Chromium
+        working-directory: web
+        run: bun node_modules/@playwright/test/cli.js install --with-deps chromium
+
+      # Scratch store inside the job's temp dir; both servers are stopped and
+      # the store removed by the script itself.
+      - name: Run the live suite
+        run: scripts/e2e-live.sh
+        env:
+          CI: "1"
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: live-e2e-report
+          path: |
+            web/playwright-report-live/
+            web/test-results/
+          if-no-files-found: ignore
