@@ -8,6 +8,7 @@ import {
   applyPursuitPatch,
   reconcileMilestone,
   reconcilePursuit,
+  removePursuit,
   runOptimisticUpdate,
 } from './pursuitState';
 
@@ -35,6 +36,7 @@ export interface UsePursuitsResult {
   updatePursuit: (pursuitId: string, patch: PursuitUpdate) => Promise<void>;
   // Resolves to the created pursuit, or null after a failure was reported.
   createPursuit: (data: PursuitCreate) => Promise<Pursuit | null>;
+  deletePursuit: (pursuitId: string) => Promise<void>;
 }
 
 export function usePursuits(options: UsePursuitsOptions = {}): UsePursuitsResult {
@@ -124,5 +126,24 @@ export function usePursuits(options: UsePursuitsOptions = {}): UsePursuitsResult
     [onError]
   );
 
-  return { pursuits, loading, error, updateMilestone, updatePursuit, createPursuit };
+  // Optimistic removal: the card disappears at once and comes back on failure.
+  const deletePursuit = useCallback(
+    async (pursuitId: string) => {
+      const snapshot = pursuitsRef.current;
+      const optimistic = removePursuit(snapshot, pursuitId);
+      await runOptimisticUpdate(
+        {
+          optimistic,
+          snapshot,
+          call: () => api.deletePursuit(pursuitId),
+          reconcile: () => optimistic,
+        },
+        setPursuits,
+        onError
+      );
+    },
+    [onError]
+  );
+
+  return { pursuits, loading, error, updateMilestone, updatePursuit, createPursuit, deletePursuit };
 }

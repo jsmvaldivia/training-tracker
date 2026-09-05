@@ -33,6 +33,10 @@ export function appendPursuit(pursuits: Pursuit[], created: Pursuit): Pursuit[] 
   return [...pursuits, created];
 }
 
+export function removePursuit(pursuits: Pursuit[], pursuitId: string): Pursuit[] {
+  return pursuits.filter((p) => p.id !== pursuitId);
+}
+
 // --- Optimistic appliers: the local guess shown before the server responds --
 
 export function applyMilestonePatch(

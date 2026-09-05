@@ -20,9 +20,8 @@ export function App() {
 
 function AppContent() {
   const toast = useToast();
-  const { pursuits, loading, error, updateMilestone, updatePursuit, createPursuit } = usePursuits({
-    onError: toast.error,
-  });
+  const { pursuits, loading, error, updateMilestone, updatePursuit, createPursuit, deletePursuit } =
+    usePursuits({ onError: toast.error });
   const [view, setView] = useState<'dashboard' | 'timeline'>('dashboard');
   const [filterType, setFilterType] = useState<'all' | 'certification' | 'training'>('all');
   const [selectedPursuitId, setSelectedPursuitId] = useState<string | null>(null);
@@ -46,6 +45,12 @@ function AppContent() {
   const handleStatusChange = (status: (typeof pursuits)[number]['status']) => {
     if (!selectedPursuit) return;
     void updatePursuit(selectedPursuit.id, { status });
+  };
+
+  const handleDelete = () => {
+    if (!selectedPursuit) return;
+    setSelectedPursuitId(null);
+    void deletePursuit(selectedPursuit.id);
   };
 
   const handleCreate = async (values: PursuitFormValues) => {
@@ -107,6 +112,7 @@ function AppContent() {
         onClose={() => setSelectedPursuitId(null)}
         onToggleMilestone={handleToggleMilestone}
         onStatusChange={handleStatusChange}
+        onDelete={handleDelete}
       />
 
       {creating && <PursuitForm onSubmit={handleCreate} onClose={() => setCreating(false)} />}

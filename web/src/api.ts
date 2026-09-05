@@ -68,6 +68,22 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
   return response.json();
 }
 
+// For 204 responses: same error mapping as fetchJSON, no body to parse.
+async function fetchVoid(url: string, options?: RequestInit): Promise<void> {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options?.headers,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: response.statusText }));
+    throw new Error(error.message || `HTTP ${response.status}`);
+  }
+}
+
 export const api = {
   // Health check
   async health(): Promise<{ status: string }> {
@@ -112,7 +128,7 @@ export const api = {
 
   // Delete pursuit
   async deletePursuit(id: string): Promise<void> {
-    await fetch(`${API_BASE}/pursuits/${id}`, { method: 'DELETE' });
+    await fetchVoid(`${API_BASE}/pursuits/${id}`, { method: 'DELETE' });
   },
 
   // Create milestone

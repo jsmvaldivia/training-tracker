@@ -6,6 +6,7 @@ import {
   applyPursuitPatch,
   reconcileMilestone,
   reconcilePursuit,
+  removePursuit,
   runOptimisticUpdate,
 } from './pursuitState';
 
@@ -137,5 +138,15 @@ describe('appendPursuit', () => {
     expect(next.map((p) => p.id)).toEqual(['p1', 'p2']);
     expect(next[0]).toBe(pursuits[0]);
     expect(pursuits).toHaveLength(1); // input untouched
+  });
+});
+
+describe('removePursuit', () => {
+  it('drops the pursuit by id and keeps the rest by identity', () => {
+    const pursuits = [pursuit('p1'), pursuit('p2'), pursuit('p3')];
+    const next = removePursuit(pursuits, 'p2');
+    expect(next.map((p) => p.id)).toEqual(['p1', 'p3']);
+    expect(next[1]).toBe(pursuits[2]);
+    expect(pursuits).toHaveLength(3);
   });
 });

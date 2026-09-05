@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   X,
   Calendar,
@@ -6,7 +6,8 @@ import {
   CheckCircle2,
   Circle,
   Award,
-  BookOpen } from
+  BookOpen,
+  Trash2 } from
 'lucide-react';
 import { Pursuit, PursuitStatus } from '../types';
 import { calculateDerivedState, cn, isMilestoneOverdue } from '../utils';
@@ -21,13 +22,19 @@ interface PursuitDetailPanelProps {
   // panel does not stamp achieved_at / completed_at — the server does.
   onToggleMilestone: (milestoneId: string) => void;
   onStatusChange: (status: PursuitStatus) => void;
+  // Called once the user has confirmed; the owner removes and closes.
+  onDelete: () => void;
 }
 export function PursuitDetailPanel({
   pursuit,
   onClose,
   onToggleMilestone,
-  onStatusChange
+  onStatusChange,
+  onDelete
 }: PursuitDetailPanelProps) {
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // A fresh pursuit (or a closed panel) never inherits a pending confirmation.
+  useEffect(() => setConfirmingDelete(false), [pursuit?.id]);
   if (!pursuit) return null;
   const derived = calculateDerivedState(pursuit);
   const isOverdue = derived.isOverdue && pursuit.status !== 'completed';
@@ -235,6 +242,35 @@ export function PursuitDetailPanel({
                   {pursuit.description}
                 </p>
               </div>
+            }
+          </div>
+
+          {/* Danger zone */}
+          <div className="mt-auto pt-6 border-t border-slate-100">
+            {confirmingDelete ?
+            <div className="flex flex-col gap-3 p-3 rounded-lg border border-red-200 bg-red-50">
+                <p className="text-sm text-red-700">
+                  Delete “{pursuit.name}”? This cannot be undone.
+                </p>
+                <div className="flex justify-end gap-2">
+                  <button
+                  onClick={() => setConfirmingDelete(false)}
+                  className="h-8 px-3 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-md hover:bg-slate-50">
+                    Cancel
+                  </button>
+                  <button
+                  onClick={onDelete}
+                  className="h-8 px-3 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700">
+                    Delete
+                  </button>
+                </div>
+              </div> :
+            <button
+              onClick={() => setConfirmingDelete(true)}
+              className="flex items-center gap-1.5 text-sm font-medium text-red-600 hover:text-red-700">
+                <Trash2 className="w-4 h-4" />
+                Delete pursuit
+              </button>
             }
           </div>
         </div>
