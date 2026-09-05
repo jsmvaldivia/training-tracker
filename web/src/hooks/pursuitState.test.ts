@@ -1,12 +1,15 @@
 import { describe, expect, it, mock } from 'bun:test';
 import type { Milestone, Pursuit } from '../types';
 import {
+  appendMilestone,
   appendPursuit,
   applyMilestonePatch,
   applyPursuitPatch,
   reconcileMilestone,
   reconcilePursuit,
+  removeMilestone,
   removePursuit,
+  replaceMilestone,
   runOptimisticUpdate,
 } from './pursuitState';
 
@@ -148,5 +151,33 @@ describe('removePursuit', () => {
     expect(next.map((p) => p.id)).toEqual(['p1', 'p3']);
     expect(next[1]).toBe(pursuits[2]);
     expect(pursuits).toHaveLength(3);
+  });
+});
+
+describe('appendMilestone', () => {
+  it('adds the milestone to its pursuit only', () => {
+    const pursuits = [pursuit('p1', [milestone('m1')]), pursuit('p2')];
+    const next = appendMilestone(pursuits, 'p1', milestone('tmp-1'));
+    expect(next[0].milestones.map((m) => m.id)).toEqual(['m1', 'tmp-1']);
+    expect(next[1]).toBe(pursuits[1]);
+  });
+});
+
+describe('replaceMilestone', () => {
+  it('swaps the optimistic placeholder for the server milestone', () => {
+    const pursuits = [pursuit('p1', [milestone('m1'), milestone('tmp-1')])];
+    const server = milestone('m9');
+    const next = replaceMilestone(pursuits, 'p1', 'tmp-1', server);
+    expect(next[0].milestones.map((m) => m.id)).toEqual(['m1', 'm9']);
+    expect(next[0].milestones[1]).toBe(server);
+  });
+});
+
+describe('removeMilestone', () => {
+  it('drops the milestone and leaves other pursuits by identity', () => {
+    const pursuits = [pursuit('p1', [milestone('m1'), milestone('m2')]), pursuit('p2', [milestone('m3')])];
+    const next = removeMilestone(pursuits, 'p1', 'm1');
+    expect(next[0].milestones.map((m) => m.id)).toEqual(['m2']);
+    expect(next[1]).toBe(pursuits[1]);
   });
 });

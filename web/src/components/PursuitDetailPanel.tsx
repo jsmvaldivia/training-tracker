@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import type { FormEvent } from 'react';
 import {
   X,
   Calendar,
@@ -7,6 +8,7 @@ import {
   Circle,
   Award,
   BookOpen,
+  Plus,
   Trash2 } from
 'lucide-react';
 import { Pursuit, PursuitStatus } from '../types';
@@ -24,18 +26,36 @@ interface PursuitDetailPanelProps {
   onStatusChange: (status: PursuitStatus) => void;
   // Called once the user has confirmed; the owner removes and closes.
   onDelete: () => void;
+  // `date` is the date input value (YYYY-MM-DD); the owner maps it to ISO.
+  onAddMilestone: (name: string, date: string) => void;
+  onDeleteMilestone: (milestoneId: string) => void;
 }
 export function PursuitDetailPanel({
   pursuit,
   onClose,
   onToggleMilestone,
   onStatusChange,
-  onDelete
+  onDelete,
+  onAddMilestone,
+  onDeleteMilestone
 }: PursuitDetailPanelProps) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  // A fresh pursuit (or a closed panel) never inherits a pending confirmation.
-  useEffect(() => setConfirmingDelete(false), [pursuit?.id]);
+  const [milestoneName, setMilestoneName] = useState('');
+  const [milestoneDate, setMilestoneDate] = useState('');
+  // A fresh pursuit (or a closed panel) never inherits a pending confirmation
+  // or a half-typed milestone.
+  useEffect(() => {
+    setConfirmingDelete(false);
+    setMilestoneName('');
+    setMilestoneDate('');
+  }, [pursuit?.id]);
   if (!pursuit) return null;
+  const handleAddMilestone = (e: FormEvent) => {
+    e.preventDefault();
+    onAddMilestone(milestoneName.trim(), milestoneDate);
+    setMilestoneName('');
+    setMilestoneDate('');
+  };
   const derived = calculateDerivedState(pursuit);
   const isOverdue = derived.isOverdue && pursuit.status !== 'completed';
   const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -186,7 +206,7 @@ export function PursuitDetailPanel({
                       <Circle className="w-5 h-5 text-slate-300" />
                       }
                       </button>
-                      <div className="flex flex-col">
+                      <div className="flex flex-col flex-1 min-w-0">
                         <span
                         className={cn(
                           'text-sm font-medium',
@@ -204,6 +224,16 @@ export function PursuitDetailPanel({
                           {overdue && <Badge variant="danger">Overdue</Badge>}
                         </span>
                       </div>
+                      <button
+                      type="button"
+                      aria-label={`Delete milestone ${milestone.name}`}
+                      onClick={(e) => {
+                        e.stopPropagation(); // the row itself toggles the state
+                        onDeleteMilestone(milestone.id);
+                      }}
+                      className="flex-shrink-0 p-1 text-slate-300 hover:text-red-600 rounded-md transition-colors">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>);
 
               })}
@@ -213,6 +243,33 @@ export function PursuitDetailPanel({
                 No milestones defined.
               </div>
             }
+
+            <form onSubmit={handleAddMilestone} className="flex flex-col sm:flex-row gap-2 mt-1">
+              <label htmlFor="milestone-name" className="sr-only">Milestone name</label>
+              <input
+                id="milestone-name"
+                type="text"
+                required
+                maxLength={200}
+                placeholder="New milestone"
+                value={milestoneName}
+                onChange={(e) => setMilestoneName(e.target.value)}
+                className="flex-1 min-w-0 rounded-md border border-slate-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              <label htmlFor="milestone-date" className="sr-only">Milestone date</label>
+              <input
+                id="milestone-date"
+                type="date"
+                required
+                value={milestoneDate}
+                onChange={(e) => setMilestoneDate(e.target.value)}
+                className="rounded-md border border-slate-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              <button
+                type="submit"
+                className="flex items-center justify-center gap-1 h-8 px-3 text-sm font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-md transition-colors">
+                <Plus className="w-4 h-4" />
+                Add milestone
+              </button>
+            </form>
           </div>
 
           {/* Tags & Notes */}

@@ -6,7 +6,7 @@ import { PursuitCard } from './components/PursuitCard';
 import { PursuitDetailPanel } from './components/PursuitDetailPanel';
 import { PursuitForm } from './components/PursuitForm';
 import { TimelineView } from './components/TimelineView';
-import { toCreateBody } from './pursuitForm';
+import { toCreateBody, toIsoDate } from './pursuitForm';
 import type { PursuitFormValues } from './pursuitForm';
 
 export function App() {
@@ -20,8 +20,17 @@ export function App() {
 
 function AppContent() {
   const toast = useToast();
-  const { pursuits, loading, error, updateMilestone, updatePursuit, createPursuit, deletePursuit } =
-    usePursuits({ onError: toast.error });
+  const {
+    pursuits,
+    loading,
+    error,
+    updateMilestone,
+    updatePursuit,
+    createPursuit,
+    deletePursuit,
+    createMilestone,
+    deleteMilestone,
+  } = usePursuits({ onError: toast.error });
   const [view, setView] = useState<'dashboard' | 'timeline'>('dashboard');
   const [filterType, setFilterType] = useState<'all' | 'certification' | 'training'>('all');
   const [selectedPursuitId, setSelectedPursuitId] = useState<string | null>(null);
@@ -45,6 +54,16 @@ function AppContent() {
   const handleStatusChange = (status: (typeof pursuits)[number]['status']) => {
     if (!selectedPursuit) return;
     void updatePursuit(selectedPursuit.id, { status });
+  };
+
+  const handleAddMilestone = (name: string, date: string) => {
+    if (!selectedPursuit) return;
+    void createMilestone(selectedPursuit.id, { name, date: toIsoDate(date) });
+  };
+
+  const handleDeleteMilestone = (milestoneId: string) => {
+    if (!selectedPursuit) return;
+    void deleteMilestone(selectedPursuit.id, milestoneId);
   };
 
   const handleDelete = () => {
@@ -113,6 +132,8 @@ function AppContent() {
         onToggleMilestone={handleToggleMilestone}
         onStatusChange={handleStatusChange}
         onDelete={handleDelete}
+        onAddMilestone={handleAddMilestone}
+        onDeleteMilestone={handleDeleteMilestone}
       />
 
       {creating && <PursuitForm onSubmit={handleCreate} onClose={() => setCreating(false)} />}

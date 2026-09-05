@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
-import type { MilestoneUpdate, PursuitCreate, PursuitUpdate } from '../api';
-import type { Pursuit } from '../types';
+import type { MilestoneCreate, MilestoneUpdate, PursuitCreate, PursuitUpdate } from '../api';
+import type { Milestone, Pursuit } from '../types';
 import {
+  appendMilestone,
   appendPursuit,
   applyMilestonePatch,
   applyPursuitPatch,
   reconcileMilestone,
   reconcilePursuit,
+  removeMilestone,
   removePursuit,
+  replaceMilestone,
   runOptimisticUpdate,
 } from './pursuitState';
 
@@ -37,7 +40,12 @@ export interface UsePursuitsResult {
   // Resolves to the created pursuit, or null after a failure was reported.
   createPursuit: (data: PursuitCreate) => Promise<Pursuit | null>;
   deletePursuit: (pursuitId: string) => Promise<void>;
+  createMilestone: (pursuitId: string, data: MilestoneCreate) => Promise<void>;
+  deleteMilestone: (pursuitId: string, milestoneId: string) => Promise<void>;
 }
+
+// Placeholder ids for milestones shown before the server assigns theirs.
+let placeholderSeq = 0;
 
 export function usePursuits(options: UsePursuitsOptions = {}): UsePursuitsResult {
   const { onError } = options;
@@ -145,5 +153,53 @@ export function usePursuits(options: UsePursuitsOptions = {}): UsePursuitsResult
     [onError]
   );
 
-  return { pursuits, loading, error, updateMilestone, updatePursuit, createPursuit, deletePursuit };
+  const createMilestone = useCallback(
+    async (pursuitId: string, data: MilestoneCreate) => {
+      const snapshot = pursuitsRef.current;
+      placeholderSeq += 1;
+      const placeholder: Milestone = { id: `tmp-${placeholderSeq}`, state: 'pending', ...data };
+      const optimistic = appendMilestone(snapshot, pursuitId, placeholder);
+      await runOptimisticUpdate(
+        {
+          optimistic,
+          snapshot,
+          call: () => api.createMilestone(pursuitId, data),
+          reconcile: (created) => replaceMilestone(optimistic, pursuitId, placeholder.id, created),
+        },
+        setPursuits,
+        onError
+      );
+    },
+    [onError]
+  );
+
+  const deleteMilestone = useCallback(
+    async (pursuitId: string, milestoneId: string) => {
+      const snapshot = pursuitsRef.current;
+      const optimistic = removeMilestone(snapshot, pursuitId, milestoneId);
+      await runOptimisticUpdate(
+        {
+          optimistic,
+          snapshot,
+          call: () => api.deleteMilestone(pursuitId, milestoneId),
+          reconcile: () => optimistic,
+        },
+        setPursuits,
+        onError
+      );
+    },
+    [onError]
+  );
+
+  return {
+    pursuits,
+    loading,
+    error,
+    updateMilestone,
+    updatePursuit,
+    createPursuit,
+    deletePursuit,
+    createMilestone,
+    deleteMilestone,
+  };
 }

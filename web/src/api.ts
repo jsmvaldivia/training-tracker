@@ -39,7 +39,7 @@ export interface PursuitUpdate {
   tags?: string[];
 }
 
-interface MilestoneCreate {
+export interface MilestoneCreate {
   name: string;
   date: string;
   state?: MilestoneState;
@@ -153,7 +153,7 @@ export const api = {
 
   // Delete milestone
   async deleteMilestone(pursuitId: string, milestoneId: string): Promise<void> {
-    await fetch(`${API_BASE}/pursuits/${pursuitId}/milestones/${milestoneId}`, {
+    await fetchVoid(`${API_BASE}/pursuits/${pursuitId}/milestones/${milestoneId}`, {
       method: 'DELETE',
     });
   },

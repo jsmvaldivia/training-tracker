@@ -37,6 +37,33 @@ export function removePursuit(pursuits: Pursuit[], pursuitId: string): Pursuit[]
   return pursuits.filter((p) => p.id !== pursuitId);
 }
 
+function mapMilestones(
+  pursuits: Pursuit[],
+  pursuitId: string,
+  update: (milestones: Milestone[]) => Milestone[]
+): Pursuit[] {
+  return pursuits.map((p) => (p.id === pursuitId ? { ...p, milestones: update(p.milestones) } : p));
+}
+
+// Optimistic add: the placeholder (temporary id) shows at once; `replaceMilestone`
+// swaps it for the server's milestone when `POST .../milestones` returns.
+export function appendMilestone(pursuits: Pursuit[], pursuitId: string, milestone: Milestone): Pursuit[] {
+  return mapMilestones(pursuits, pursuitId, (ms) => [...ms, milestone]);
+}
+
+export function replaceMilestone(
+  pursuits: Pursuit[],
+  pursuitId: string,
+  placeholderId: string,
+  milestone: Milestone
+): Pursuit[] {
+  return mapMilestones(pursuits, pursuitId, (ms) => ms.map((m) => (m.id === placeholderId ? milestone : m)));
+}
+
+export function removeMilestone(pursuits: Pursuit[], pursuitId: string, milestoneId: string): Pursuit[] {
+  return mapMilestones(pursuits, pursuitId, (ms) => ms.filter((m) => m.id !== milestoneId));
+}
+
 // --- Optimistic appliers: the local guess shown before the server responds --
 
 export function applyMilestonePatch(
