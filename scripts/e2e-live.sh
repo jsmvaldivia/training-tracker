@@ -31,7 +31,7 @@ done
 # One scratch directory per run: the store, its atomic-write temp files, and
 # the server logs. The rollback spec makes it read-only mid-run, so cleanup
 # restores write permission before removing it.
-scratch_dir="$(mktemp -d -t tt-e2e-live)"
+scratch_dir="$(mktemp -d "${TMPDIR:-/tmp}/tt-e2e-live.XXXXXX")"
 scratch="$scratch_dir/data.json"
 cp api/data.seed.json "$scratch"
 
