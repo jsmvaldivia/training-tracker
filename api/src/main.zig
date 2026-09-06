@@ -102,22 +102,25 @@ fn handleConnection(io: std.Io, gpa: std.mem.Allocator, store: *store_mod.Store,
     if (try pursuits.handle(gpa, store, method, target, body)) |resp| {
         defer if (resp.body.len > 0) gpa.free(resp.body);
         log.debug("{s} {s} -> {d}", .{ @tagName(method), target, @intFromEnum(resp.status) });
-        try request.respond(resp.body, .{
-            .status = resp.status,
-            .extra_headers = &.{json_content_type},
-            .keep_alive = false,
-        });
+        try respond(&request, resp);
         return;
     }
 
     // Fallback routes handled inline.
-    if (method == .GET and std.mem.eql(u8, stripQuery(target), "/health")) {
-        log.debug("{s} {s} -> 200", .{ @tagName(method), target });
-        try request.respond("{\"status\":\"ok\"}", .{
-            .status = .ok,
-            .extra_headers = &.{json_content_type},
-            .keep_alive = false,
-        });
+    if (std.mem.eql(u8, stripQuery(target), "/health")) {
+        if (method == .GET) {
+            log.debug("{s} {s} -> 200", .{ @tagName(method), target });
+            try request.respond("{\"status\":\"ok\"}", .{
+                .status = .ok,
+                .extra_headers = &.{json_content_type},
+                .keep_alive = false,
+            });
+            return;
+        }
+        const resp = try pursuits.methodNotAllowed(gpa, "GET");
+        defer gpa.free(resp.body);
+        log.debug("{s} {s} -> 405", .{ @tagName(method), target });
+        try respond(&request, resp);
         return;
     }
 
@@ -125,6 +128,22 @@ fn handleConnection(io: std.Io, gpa: std.mem.Allocator, store: *store_mod.Store,
     try request.respond("{\"status\":404,\"message\":\"Not found\"}", .{
         .status = .not_found,
         .extra_headers = &.{json_content_type},
+        .keep_alive = false,
+    });
+}
+
+/// Writes a handler `Response`: JSON content type always, `Allow` when the
+/// handler set it (405), one request per connection.
+fn respond(request: *std.http.Server.Request, resp: pursuits.Response) !void {
+    var headers: [2]std.http.Header = .{ json_content_type, undefined };
+    var count: usize = 1;
+    if (resp.allow) |allow| {
+        headers[1] = .{ .name = "allow", .value = allow };
+        count = 2;
+    }
+    try request.respond(resp.body, .{
+        .status = resp.status,
+        .extra_headers = headers[0..count],
         .keep_alive = false,
     });
 }

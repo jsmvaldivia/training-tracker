@@ -52,6 +52,8 @@ paths:
                 $ref: "#/components/schemas/Health"
               example:
                 status: ok
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
 
   /pursuits:
     get:
@@ -85,6 +87,9 @@ paths:
           schema:
             type: integer
             minimum: 0
+            # Bounded so every schema-valid value parses on the server; an
+            # offset past the end simply yields an empty page.
+            maximum: 2147483647
             default: 0
           description: Number of pursuits to skip for pagination (default 0).
           example: 0
@@ -123,6 +128,18 @@ paths:
                 total: 2
                 limit: 50
                 offset: 0
+        "400":
+          description: A query parameter is out of range or not a valid value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                status: 400
+                message: Invalid query parameter
+                details: "Query parameter 'limit' must be an integer between 1 and 100"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
 
     post:
       operationId: createPursuit
@@ -201,6 +218,8 @@ paths:
               example:
                 status: 500
                 message: Failed to persist change
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
 
   /pursuits/{id}:
     get:
@@ -249,6 +268,8 @@ paths:
               example:
                 status: 404
                 message: Pursuit not found
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
 
     patch:
       operationId: updatePursuit
@@ -329,6 +350,8 @@ paths:
               example:
                 status: 500
                 message: Failed to persist change
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
 
     delete:
       operationId: deletePursuit
@@ -365,6 +388,8 @@ paths:
               example:
                 status: 500
                 message: Failed to persist change
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
 
   /pursuits/{id}/milestones:
     post:
@@ -422,6 +447,16 @@ paths:
               example:
                 status: 404
                 message: Pursuit not found
+        "409":
+          description: The pursuit already holds the maximum of 50 milestones
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                status: 409
+                message: Milestone limit reached
+                details: "Pursuit already has the maximum of 50 milestones"
         "500":
           description: Failed to persist the created milestone
           content:
@@ -431,6 +466,8 @@ paths:
               example:
                 status: 500
                 message: Failed to persist change
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
 
   /pursuits/{id}/milestones/{milestoneId}:
     patch:
@@ -512,6 +549,8 @@ paths:
               example:
                 status: 500
                 message: Failed to persist change
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
     delete:
       operationId: deleteMilestone
       summary: Delete a milestone
@@ -554,8 +593,27 @@ paths:
               example:
                 status: 500
                 message: Failed to persist change
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
 
 components:
+  responses:
+    MethodNotAllowed:
+      description: The path exists but does not support this HTTP method
+      headers:
+        Allow:
+          description: The methods this path does support, comma-separated.
+          schema:
+            type: string
+            example: "GET, PATCH, DELETE"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            status: 405
+            message: Method not allowed
+
   schemas:
     Health:
       type: object
@@ -566,6 +624,15 @@ components:
           enum: [ok]
           description: Liveness indicator; always 'ok' when the service responds.
           example: ok
+
+    Timestamp:
+      type: string
+      format: date-time
+      # date-time alone also admits offsets such as +02:00; this API stores and
+      # returns UTC only, so the pattern pins the literal Z zone.
+      pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+      description: ISO 8601 timestamp in UTC with a literal `Z` zone.
+      example: "2026-06-19T14:30:00Z"
 
     Status:
       type: string
@@ -595,8 +662,7 @@ components:
           description: Milestone name or description.
           example: "Complete Cloud Practitioner exam"
         date:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
           description: Target date for this milestone (ISO 8601).
           example: "2026-07-15T00:00:00Z"
         state:
@@ -621,8 +687,7 @@ components:
           description: Milestone name or description.
           example: "Complete Cloud Practitioner exam"
         date:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
           description: Target date for this milestone (ISO 8601).
           example: "2026-07-15T00:00:00Z"
         state:
@@ -647,15 +712,13 @@ components:
           description: Milestone name or description.
           example: "Complete Cloud Practitioner exam"
         date:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
           description: Target date for this milestone (ISO 8601).
           example: "2026-07-15T00:00:00Z"
         state:
           $ref: "#/components/schemas/MilestoneState"
         achieved_at:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
           description: >
             Timestamp when milestone was achieved (ISO 8601). Auto-set by server
             when state changes to 'achieved'. Read-only.
@@ -692,25 +755,21 @@ components:
           description: Optional notes or description.
           example: "Associate level certification for AWS cloud architecture."
         target_date:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
           description: Target completion date (ISO 8601).
           example: "2026-12-31T23:59:59Z"
         started_at:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
           description: Date when pursuit was started (ISO 8601).
           example: "2026-06-01T00:00:00Z"
         completed_at:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
           description: >
             Completion timestamp (ISO 8601). Auto-set by server when status
             changes to 'completed'. Read-only.
           example: "2026-12-15T10:30:00Z"
         expires_at:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
           description: >
             Expiration date for certifications (ISO 8601). Optional, typically
             only set for type=certification.
@@ -769,18 +828,15 @@ components:
           description: Optional notes or description.
           example: "Associate level certification for AWS cloud architecture."
         target_date:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
           description: Target completion date (ISO 8601).
           example: "2026-12-31T23:59:59Z"
         started_at:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
           description: Date when pursuit was started (ISO 8601).
           example: "2026-06-01T00:00:00Z"
         expires_at:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
           description: >
             Expiration date for certifications (ISO 8601). Optional, typically
             only set for type=certification.
@@ -830,14 +886,11 @@ components:
           type: string
           maxLength: 2000
         target_date:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
         started_at:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
         expires_at:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/Timestamp"
         tags:
           type: array
           items:
@@ -888,7 +941,10 @@ components:
           example: "Pursuit not found"
         details:
           type: string
-          description: Optional detailed error information.
+          description: >
+            Which field or query parameter failed validation and why, e.g.
+            "Field 'name' is required". Present on every 400; absent on
+            404, 405, and 500.
           example: "No pursuit exists with id 'p_1'"
       example:
         status: 404

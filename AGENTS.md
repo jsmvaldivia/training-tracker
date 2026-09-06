@@ -53,6 +53,10 @@ zig build test -j1 -Dtest-filter="milestone"   # subset by test name
 zig fmt --check .      # formatting gate
 ```
 
+`scripts/contract-test.sh` (from the repo root, needs `uv`) runs Schemathesis
+against a ReleaseSafe build on a scratch store: the CI `contract` job. Run it
+after any change to `openapi.yaml` or the handlers.
+
 Gotcha: test binaries include imported module tests and share hardcoded `/tmp`
 data paths. Use `-j1` to serialize binaries within a build. Never run the same
 file's tests in two processes at once.

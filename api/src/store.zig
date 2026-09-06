@@ -29,11 +29,41 @@ pub const max_milestones = 50;
 /// HTTP status codes declared in the contract.
 pub const StoreError = error{
     Invalid, // -> 400
+    Conflict, // -> 409: a valid request the resource's current state forbids
     PursuitNotFound, // -> 404
     MilestoneNotFound, // -> 404
 };
 
 pub const ValidationError = error{Invalid};
+
+/// Why the most recent validation failed, worded like the contract's
+/// `Error.details` examples ("Field 'name' is required"). Zig errors carry no
+/// payload, so the validators write the reason here and the handler reads it
+/// back when it maps `error.Invalid` to a 400. Every mutation resets it first;
+/// the store is single-threaded, so one slot is enough.
+pub const Diag = struct {
+    buf: [192]u8 = undefined,
+    len: usize = 0,
+
+    fn set(self: *Diag, comptime fmt: []const u8, args: anytype) void {
+        const out = std.fmt.bufPrint(&self.buf, fmt, args) catch {
+            // Truncated: keep what fits rather than lose the message.
+            self.len = self.buf.len;
+            return;
+        };
+        self.len = out.len;
+    }
+
+    fn reset(self: *Diag) void {
+        self.len = 0;
+    }
+
+    /// The message for the last `error.Invalid`, or null when the last
+    /// mutation succeeded.
+    pub fn message(self: *const Diag) ?[]const u8 {
+        return if (self.len == 0) null else self.buf[0..self.len];
+    }
+};
 
 /// In-memory store backed by a JSON file. Not thread-safe; the server handles
 /// one request at a time per connection and this single-user app does not need
@@ -48,6 +78,8 @@ pub const Store = struct {
     arena: *std.heap.ArenaAllocator,
     root: Value,
     seq: u64,
+    /// Reason for the last validation failure; see `Diag`.
+    diag: Diag = .{},
 
     pub fn init(gpa: Allocator, io: std.Io, path: []const u8) !Store {
         const arena = try gpa.create(std.heap.ArenaAllocator);
@@ -205,16 +237,16 @@ pub const Store = struct {
     /// the created `Pursuit` value (arena-owned). Caller flushes.
     pub fn create(self: *Store, body: Value) (StoreError || Allocator.Error)!Value {
         const a = self.alloc();
-        if (body != .object) return StoreError.Invalid;
-        const in = body.object;
+        const d = &self.diag;
+        const in = try requireObject(d, body);
 
-        const name = try requireString(in, "name", 1, max_name_len);
-        const ptype = try requireEnum(in, "type", &pursuit_types);
-        const target_date = try requireDateTime(in, "target_date");
-        const started_at = try requireDateTime(in, "started_at");
+        const name = try requireString(d, in, "name", 1, max_name_len);
+        const ptype = try requireEnum(d, in, "type", &pursuit_types);
+        const target_date = try requireDateTime(d, in, "target_date");
+        const started_at = try requireDateTime(d, in, "started_at");
 
         // status defaults to "planned"
-        const status = try optionalEnum(in, "status", &statuses) orelse "planned";
+        const status = try optionalEnum(d, in, "status", &statuses) orelse "planned";
 
         var obj = ObjectMap{};
         const id = try self.nextId("p_");
@@ -223,13 +255,13 @@ pub const Store = struct {
         try obj.put(a, "type", .{ .string = ptype });
         try obj.put(a, "status", .{ .string = status });
 
-        if (try optionalString(in, "description", 0, max_description_len)) |d|
-            try obj.put(a, "description", .{ .string = try a.dupe(u8, d) });
+        if (try optionalString(d, in, "description", 0, max_description_len)) |desc|
+            try obj.put(a, "description", .{ .string = try a.dupe(u8, desc) });
 
         try obj.put(a, "target_date", .{ .string = try a.dupe(u8, target_date) });
         try obj.put(a, "started_at", .{ .string = try a.dupe(u8, started_at) });
 
-        if (try optionalDateTime(in, "expires_at")) |e|
+        if (try optionalDateTime(d, in, "expires_at")) |e|
             try obj.put(a, "expires_at", .{ .string = try a.dupe(u8, e) });
 
         // Auto-set completed_at when created already completed.
@@ -248,28 +280,28 @@ pub const Store = struct {
     pub fn update(self: *Store, id: []const u8, body: Value) (StoreError || Allocator.Error)!Value {
         const idx = self.findPursuitIndex(id) orelse return StoreError.PursuitNotFound;
         const a = self.alloc();
-        if (body != .object) return StoreError.Invalid;
-        const in = body.object;
+        const d = &self.diag;
+        const in = try requireObject(d, body);
 
         var obj = &self.pursuitsArray().items[idx].object;
 
-        if (try optionalString(in, "name", 1, max_name_len)) |v|
+        if (try optionalString(d, in, "name", 1, max_name_len)) |v|
             try obj.put(a, "name", .{ .string = try a.dupe(u8, v) });
-        if (try optionalEnum(in, "type", &pursuit_types)) |v|
+        if (try optionalEnum(d, in, "type", &pursuit_types)) |v|
             try obj.put(a, "type", .{ .string = v });
-        if (try optionalString(in, "description", 0, max_description_len)) |v|
+        if (try optionalString(d, in, "description", 0, max_description_len)) |v|
             try obj.put(a, "description", .{ .string = try a.dupe(u8, v) });
-        if (try optionalDateTime(in, "target_date")) |v|
+        if (try optionalDateTime(d, in, "target_date")) |v|
             try obj.put(a, "target_date", .{ .string = try a.dupe(u8, v) });
-        if (try optionalDateTime(in, "started_at")) |v|
+        if (try optionalDateTime(d, in, "started_at")) |v|
             try obj.put(a, "started_at", .{ .string = try a.dupe(u8, v) });
-        if (try optionalDateTime(in, "expires_at")) |v|
+        if (try optionalDateTime(d, in, "expires_at")) |v|
             try obj.put(a, "expires_at", .{ .string = try a.dupe(u8, v) });
 
         if (in.get("tags")) |_|
             try obj.put(a, "tags", .{ .array = try self.parseTags(in) });
 
-        if (try optionalEnum(in, "status", &statuses)) |new_status| {
+        if (try optionalEnum(d, in, "status", &statuses)) |new_status| {
             const prev = obj.get("status");
             const was_completed = prev != null and prev.? == .string and
                 std.mem.eql(u8, prev.?.string, "completed");
@@ -305,15 +337,19 @@ pub const Store = struct {
     pub fn createMilestone(self: *Store, pursuit_id: []const u8, body: Value) (StoreError || Allocator.Error)!Value {
         const pidx = self.findPursuitIndex(pursuit_id) orelse return StoreError.PursuitNotFound;
         const a = self.alloc();
-        if (body != .object) return StoreError.Invalid;
-        const in = body.object;
+        const d = &self.diag;
+        const in = try requireObject(d, body);
 
-        const name = try requireString(in, "name", 1, max_name_len);
-        const date = try requireDateTime(in, "date");
-        const state = try optionalEnum(in, "state", &milestone_states) orelse "pending";
+        const name = try requireString(d, in, "name", 1, max_name_len);
+        const date = try requireDateTime(d, in, "date");
+        const state = try optionalEnum(d, in, "state", &milestone_states) orelse "pending";
 
         const arr = self.milestonesArray(pidx);
-        if (arr.items.len >= max_milestones) return StoreError.Invalid;
+        if (arr.items.len >= max_milestones) {
+            // The body is valid; the pursuit is full. That is a 409, not a 400.
+            d.set("Pursuit already has the maximum of {d} milestones", .{max_milestones});
+            return StoreError.Conflict;
+        }
 
         var obj = ObjectMap{};
         const id = try self.nextId("m_");
@@ -337,17 +373,17 @@ pub const Store = struct {
         const pidx = self.findPursuitIndex(pursuit_id) orelse return StoreError.PursuitNotFound;
         const midx = self.findMilestoneIndex(pidx, milestone_id) orelse return StoreError.MilestoneNotFound;
         const a = self.alloc();
-        if (body != .object) return StoreError.Invalid;
-        const in = body.object;
+        const d = &self.diag;
+        const in = try requireObject(d, body);
 
         var obj = &self.milestonesArray(pidx).items[midx].object;
 
-        if (try optionalString(in, "name", 1, max_name_len)) |v|
+        if (try optionalString(d, in, "name", 1, max_name_len)) |v|
             try obj.put(a, "name", .{ .string = try a.dupe(u8, v) });
-        if (try optionalDateTime(in, "date")) |v|
+        if (try optionalDateTime(d, in, "date")) |v|
             try obj.put(a, "date", .{ .string = try a.dupe(u8, v) });
 
-        if (try optionalEnum(in, "state", &milestone_states)) |new_state| {
+        if (try optionalEnum(d, in, "state", &milestone_states)) |new_state| {
             try obj.put(a, "state", .{ .string = new_state });
             if (std.mem.eql(u8, new_state, "achieved")) {
                 if (obj.get("achieved_at") == null)
@@ -378,13 +414,18 @@ pub const Store = struct {
 
     fn parseTags(self: *Store, in: ObjectMap) !Array {
         const a = self.alloc();
+        const d = &self.diag;
         var out = Array.init(a);
         const tags_val = in.get("tags") orelse return out;
-        if (tags_val != .array) return StoreError.Invalid;
-        if (tags_val.array.items.len > max_tags) return StoreError.Invalid;
-        for (tags_val.array.items) |t| {
-            if (t != .string) return StoreError.Invalid;
-            if (t.string.len < 1 or t.string.len > max_tag_len) return StoreError.Invalid;
+        if (tags_val != .array or tags_val.array.items.len > max_tags) {
+            d.set("Field 'tags' must be an array of at most {d} strings", .{max_tags});
+            return StoreError.Invalid;
+        }
+        for (tags_val.array.items, 0..) |t, i| {
+            if (t != .string or charCount(t.string) < 1 or charCount(t.string) > max_tag_len) {
+                d.set("Field 'tags[{d}]' must be a string between 1 and {d} characters", .{ i, max_tag_len });
+                return StoreError.Invalid;
+            }
             try out.append(.{ .string = try a.dupe(u8, t.string) });
         }
         return out;
@@ -392,16 +433,25 @@ pub const Store = struct {
 
     fn parseInlineMilestones(self: *Store, in: ObjectMap) !Array {
         const a = self.alloc();
+        const d = &self.diag;
         var out = Array.init(a);
         const ms_val = in.get("milestones") orelse return out;
-        if (ms_val != .array) return StoreError.Invalid;
-        if (ms_val.array.items.len > max_milestones) return StoreError.Invalid;
-        for (ms_val.array.items) |m| {
-            if (m != .object) return StoreError.Invalid;
+        if (ms_val != .array or ms_val.array.items.len > max_milestones) {
+            d.set("Field 'milestones' must be an array of at most {d} milestones", .{max_milestones});
+            return StoreError.Invalid;
+        }
+        for (ms_val.array.items, 0..) |m, i| {
+            if (m != .object) {
+                d.set("Field 'milestones[{d}]' must be an object", .{i});
+                return StoreError.Invalid;
+            }
             const mo = m.object;
-            const name = try requireString(mo, "name", 1, max_name_len);
-            const date = try requireDateTime(mo, "date");
-            const state = try optionalEnum(mo, "state", &milestone_states) orelse "pending";
+            // A rejected inline milestone is reported by its path
+            // (`milestones[2].date`) so the 400 is not mistaken for one on
+            // the pursuit's own fields.
+            const name = requireString(d, mo, "name", 1, max_name_len) catch |e| return nestDiag(d, i, e);
+            const date = requireDateTime(d, mo, "date") catch |e| return nestDiag(d, i, e);
+            const state = (optionalEnum(d, mo, "state", &milestone_states) catch |e| return nestDiag(d, i, e)) orelse "pending";
 
             var obj = ObjectMap{};
             try obj.put(a, "id", .{ .string = try self.nextId("m_") });
@@ -422,47 +472,132 @@ const pursuit_types = [_][]const u8{ "certification", "training" };
 const statuses = [_][]const u8{ "planned", "in_progress", "completed", "expired" };
 const milestone_states = [_][]const u8{ "pending", "achieved" };
 
-// ---- Field validation helpers -------------------------------------------
+/// True when `s` is a `PursuitType` enum value from the contract. Used by the
+/// handler to validate the `type` query filter with the same table the store
+/// applies to request bodies.
+pub fn isPursuitType(s: []const u8) bool {
+    for (pursuit_types) |t| {
+        if (std.mem.eql(u8, s, t)) return true;
+    }
+    return false;
+}
 
-fn requireString(obj: ObjectMap, key: []const u8, min_len: usize, max_len: usize) ValidationError![]const u8 {
-    const v = obj.get(key) orelse return error.Invalid;
-    if (v != .string) return error.Invalid;
-    if (v.string.len < min_len or v.string.len > max_len) return error.Invalid;
+// ---- Field validation helpers -------------------------------------------
+//
+// Each helper writes the reason for a rejection into `d` right before it
+// returns `error.Invalid`, so the handler can surface it as `Error.details`.
+
+/// Rewrites a pending "Field 'x' ..." message into "Field 'milestones[i].x' ..."
+/// and passes the error through, so inline-milestone rejections name their path.
+fn nestDiag(d: *Diag, index: usize, err: ValidationError) ValidationError {
+    const prefix = "Field '";
+    if (d.message()) |msg| {
+        if (std.mem.startsWith(u8, msg, prefix)) {
+            var tmp: [192]u8 = undefined;
+            const rest = msg[prefix.len..];
+            if (std.fmt.bufPrint(&tmp, "{s}milestones[{d}].{s}", .{ prefix, index, rest })) |out| {
+                d.set("{s}", .{out});
+            } else |_| {}
+        }
+    }
+    return err;
+}
+
+fn requireObject(d: *Diag, body: Value) ValidationError!ObjectMap {
+    d.reset();
+    if (body != .object) {
+        d.set("Request body must be a JSON object", .{});
+        return error.Invalid;
+    }
+    return body.object;
+}
+
+fn requireString(d: *Diag, obj: ObjectMap, key: []const u8, min_len: usize, max_len: usize) ValidationError![]const u8 {
+    const v = obj.get(key) orelse {
+        d.set("Field '{s}' is required", .{key});
+        return error.Invalid;
+    };
+    return checkString(d, key, v, min_len, max_len);
+}
+
+fn optionalString(d: *Diag, obj: ObjectMap, key: []const u8, min_len: usize, max_len: usize) ValidationError!?[]const u8 {
+    const v = obj.get(key) orelse return null;
+    return try checkString(d, key, v, min_len, max_len);
+}
+
+fn checkString(d: *Diag, key: []const u8, v: Value, min_len: usize, max_len: usize) ValidationError![]const u8 {
+    if (v != .string) {
+        d.set("Field '{s}' must be a string", .{key});
+        return error.Invalid;
+    }
+    const len = charCount(v.string);
+    if (len < min_len or len > max_len) {
+        d.set("Field '{s}' must be between {d} and {d} characters", .{ key, min_len, max_len });
+        return error.Invalid;
+    }
     return v.string;
 }
 
-fn optionalString(obj: ObjectMap, key: []const u8, min_len: usize, max_len: usize) ValidationError!?[]const u8 {
-    const v = obj.get(key) orelse return null;
-    if (v != .string) return error.Invalid;
-    if (v.string.len < min_len or v.string.len > max_len) return error.Invalid;
-    return v.string;
+/// Length in characters (Unicode code points), which is what the contract's
+/// `minLength`/`maxLength` count — a 200-character name may be 800 bytes.
+/// std.json only yields valid UTF-8, so the count cannot fail; a malformed
+/// string is treated as too long rather than crashing.
+fn charCount(s: []const u8) usize {
+    return std.unicode.utf8CountCodepoints(s) catch std.math.maxInt(usize);
 }
 
 /// Like `requireString`, but the value must be an ISO-8601 UTC timestamp
 /// (`format: date-time` in the contract). Rejects e.g. `"x"` or `2026-02-30`.
-fn requireDateTime(obj: ObjectMap, key: []const u8) ValidationError![]const u8 {
-    const v = obj.get(key) orelse return error.Invalid;
-    if (v != .string) return error.Invalid;
-    if (!time_util.isIso8601Utc(v.string)) return error.Invalid;
-    return v.string;
+fn requireDateTime(d: *Diag, obj: ObjectMap, key: []const u8) ValidationError![]const u8 {
+    const v = obj.get(key) orelse {
+        d.set("Field '{s}' is required", .{key});
+        return error.Invalid;
+    };
+    return checkDateTime(d, key, v);
 }
 
 /// Optional `date-time` field: absent -> null, present -> must be valid.
-fn optionalDateTime(obj: ObjectMap, key: []const u8) ValidationError!?[]const u8 {
+fn optionalDateTime(d: *Diag, obj: ObjectMap, key: []const u8) ValidationError!?[]const u8 {
     const v = obj.get(key) orelse return null;
-    if (v != .string) return error.Invalid;
-    if (!time_util.isIso8601Utc(v.string)) return error.Invalid;
+    return try checkDateTime(d, key, v);
+}
+
+fn checkDateTime(d: *Diag, key: []const u8, v: Value) ValidationError![]const u8 {
+    if (v != .string or !time_util.isIso8601Utc(v.string)) {
+        d.set("Field '{s}' must be an ISO 8601 UTC timestamp like 2026-06-19T14:30:00Z", .{key});
+        return error.Invalid;
+    }
     return v.string;
 }
 
-fn requireEnum(obj: ObjectMap, key: []const u8, allowed: []const []const u8) ValidationError![]const u8 {
-    const v = obj.get(key) orelse return error.Invalid;
-    return matchEnum(v, allowed) orelse error.Invalid;
+fn requireEnum(d: *Diag, obj: ObjectMap, key: []const u8, comptime allowed: []const []const u8) ValidationError![]const u8 {
+    const v = obj.get(key) orelse {
+        d.set("Field '{s}' is required", .{key});
+        return error.Invalid;
+    };
+    return checkEnum(d, key, v, allowed);
 }
 
-fn optionalEnum(obj: ObjectMap, key: []const u8, allowed: []const []const u8) ValidationError!?[]const u8 {
+fn optionalEnum(d: *Diag, obj: ObjectMap, key: []const u8, comptime allowed: []const []const u8) ValidationError!?[]const u8 {
     const v = obj.get(key) orelse return null;
-    return matchEnum(v, allowed) orelse error.Invalid;
+    return try checkEnum(d, key, v, allowed);
+}
+
+fn checkEnum(d: *Diag, key: []const u8, v: Value, comptime allowed: []const []const u8) ValidationError![]const u8 {
+    return matchEnum(v, allowed) orelse {
+        d.set("Field '{s}' must be one of: {s}", .{ key, comptime joinComma(allowed) });
+        return error.Invalid;
+    };
+}
+
+/// "a, b, c" for an enum table, computed at compile time so the message needs
+/// no allocation.
+fn joinComma(comptime items: []const []const u8) []const u8 {
+    comptime {
+        var out: []const u8 = "";
+        for (items, 0..) |item, i| out = out ++ (if (i == 0) "" else ", ") ++ item;
+        return out;
+    }
 }
 
 fn matchEnum(v: Value, allowed: []const []const u8) ?[]const u8 {
@@ -836,4 +971,82 @@ test "flush writes and reload preserves seq and data" {
     // New IDs continue from persisted seq (no collision with p_1).
     const created2 = try s2.create(try parse(a, "{\"name\":\"Y\",\"type\":\"training\",\"target_date\":\"2026-12-31T00:00:00Z\",\"started_at\":\"2026-06-01T00:00:00Z\"}"));
     try testing.expect(!std.mem.eql(u8, created2.object.get("id").?.string, "p_1"));
+}
+
+test "validation failures leave a details message naming the field and rule" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var s = try testStore(testing.allocator);
+    defer s.deinit();
+
+    const cases = [_]struct { body: []const u8, details: []const u8 }{
+        .{ .body = "{\"type\":\"training\"}", .details = "Field 'name' is required" },
+        .{ .body = "{\"name\":\"n\",\"type\":\"nope\",\"target_date\":\"2026-12-31T00:00:00Z\",\"started_at\":\"2026-06-01T00:00:00Z\"}", .details = "Field 'type' must be one of: certification, training" },
+        .{ .body = "{\"name\":\"n\",\"type\":\"training\",\"target_date\":\"someday\",\"started_at\":\"2026-06-01T00:00:00Z\"}", .details = "Field 'target_date' must be an ISO 8601 UTC timestamp like 2026-06-19T14:30:00Z" },
+        .{ .body = "{\"name\":\"\",\"type\":\"training\",\"target_date\":\"2026-12-31T00:00:00Z\",\"started_at\":\"2026-06-01T00:00:00Z\"}", .details = "Field 'name' must be between 1 and 200 characters" },
+        .{ .body = "{\"name\":\"n\",\"type\":\"training\",\"target_date\":\"2026-12-31T00:00:00Z\",\"started_at\":\"2026-06-01T00:00:00Z\",\"tags\":\"cloud\"}", .details = "Field 'tags' must be an array of at most 20 strings" },
+        .{ .body = "{\"name\":\"n\",\"type\":\"training\",\"target_date\":\"2026-12-31T00:00:00Z\",\"started_at\":\"2026-06-01T00:00:00Z\",\"milestones\":[{\"name\":\"m\"}]}", .details = "Field 'milestones[0].date' is required" },
+        .{ .body = "[]", .details = "Request body must be a JSON object" },
+    };
+    for (cases) |case| {
+        try testing.expectError(StoreError.Invalid, s.create(try parse(a, case.body)));
+        try testing.expectEqualStrings(case.details, s.diag.message().?);
+    }
+
+    // A later valid mutation clears the stale message.
+    _ = try s.create(try parse(a, valid_pursuit));
+    try testing.expect(s.diag.message() == null);
+}
+
+test "updateMilestone reports a bad state with the allowed values" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var s = try testStore(testing.allocator);
+    defer s.deinit();
+
+    const pid = try createPursuitId(&s, a, valid_pursuit);
+    const m = try s.createMilestone(pid, try parse(a, "{\"name\":\"E\",\"date\":\"2026-07-15T00:00:00Z\"}"));
+    const mid = try a.dupe(u8, m.object.get("id").?.string);
+
+    try testing.expectError(StoreError.Invalid, s.updateMilestone(pid, mid, try parse(a, "{\"state\":\"done\"}")));
+    try testing.expectEqualStrings("Field 'state' must be one of: pending, achieved", s.diag.message().?);
+}
+
+test "string limits count characters, not bytes" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var s = try testStore(testing.allocator);
+    defer s.deinit();
+
+    // 200 x U+00E9 (2 bytes each) is 400 bytes but exactly maxLength characters.
+    const name200 = "é" ** 200;
+    const ok = try std.fmt.allocPrint(a,
+        \\{{"name":"{s}","type":"training","target_date":"2026-12-31T00:00:00Z","started_at":"2026-06-01T00:00:00Z","tags":["{s}"]}}
+    , .{ name200, "日" ** 50 });
+    _ = try s.create(try parse(a, ok));
+
+    const too_long = try std.fmt.allocPrint(a,
+        \\{{"name":"{s}","type":"training","target_date":"2026-12-31T00:00:00Z","started_at":"2026-06-01T00:00:00Z"}}
+    , .{"é" ** 201});
+    try testing.expectError(StoreError.Invalid, s.create(try parse(a, too_long)));
+    try testing.expectEqualStrings("Field 'name' must be between 1 and 200 characters", s.diag.message().?);
+}
+
+test "createMilestone answers Conflict once the pursuit holds the maximum" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var s = try testStore(testing.allocator);
+    defer s.deinit();
+
+    const pid = try createPursuitId(&s, a, valid_pursuit);
+    for (0..max_milestones) |_| {
+        _ = try s.createMilestone(pid, try parse(a, "{\"name\":\"m\",\"date\":\"2026-07-15T00:00:00Z\"}"));
+    }
+    try testing.expectError(StoreError.Conflict, s.createMilestone(pid, try parse(a, "{\"name\":\"one too many\",\"date\":\"2026-07-15T00:00:00Z\"}")));
+    try testing.expectEqualStrings("Pursuit already has the maximum of 50 milestones", s.diag.message().?);
+    try testing.expectEqual(@as(usize, max_milestones), (try s.get(pid)).object.get("milestones").?.array.items.len);
 }

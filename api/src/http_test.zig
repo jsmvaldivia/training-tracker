@@ -109,26 +109,43 @@ const ServerContext = struct {
 
         if (try pursuits.handle(self.allocator, &self.store, method, target, body)) |resp| {
             defer if (resp.body.len > 0) self.allocator.free(resp.body);
-            try req.respond(resp.body, .{
-                .status = resp.status,
-                .extra_headers = &.{json_content_type},
-                .keep_alive = false,
-            });
+            try respond(&req, resp);
             return;
         }
 
-        if (method == .GET and std.mem.eql(u8, stripQuery(target), "/health")) {
-            try req.respond("{\"status\":\"ok\"}", .{
-                .status = .ok,
-                .extra_headers = &.{json_content_type},
-                .keep_alive = false,
-            });
+        if (std.mem.eql(u8, stripQuery(target), "/health")) {
+            if (method == .GET) {
+                try req.respond("{\"status\":\"ok\"}", .{
+                    .status = .ok,
+                    .extra_headers = &.{json_content_type},
+                    .keep_alive = false,
+                });
+                return;
+            }
+            const resp = try pursuits.methodNotAllowed(self.allocator, "GET");
+            defer self.allocator.free(resp.body);
+            try respond(&req, resp);
             return;
         }
 
         try req.respond("{\"status\":404,\"message\":\"Not found\"}", .{
             .status = .not_found,
             .extra_headers = &.{json_content_type},
+            .keep_alive = false,
+        });
+    }
+
+    /// Same header rules as `main.zig`: JSON always, `Allow` on 405.
+    fn respond(req: *std.http.Server.Request, resp: pursuits.Response) !void {
+        var headers: [2]std.http.Header = .{ json_content_type, undefined };
+        var count: usize = 1;
+        if (resp.allow) |allow| {
+            headers[1] = .{ .name = "allow", .value = allow };
+            count = 2;
+        }
+        try req.respond(resp.body, .{
+            .status = resp.status,
+            .extra_headers = headers[0..count],
             .keep_alive = false,
         });
     }
@@ -232,12 +249,20 @@ pub const TestServer = struct {
 pub const Response = struct {
     status: std.http.Status,
     body: []u8,
+    /// The `Allow` header, when the server sent one (405 responses).
+    allow: ?[]u8 = null,
     allocator: std.mem.Allocator,
 
     pub fn deinit(self: *Response) void {
         self.allocator.free(self.body);
+        if (self.allow) |a| self.allocator.free(a);
     }
 };
+
+/// Make a request with an arbitrary method and no body (e.g. TRACE, PUT).
+pub fn call(allocator: std.mem.Allocator, method: std.http.Method, port: u16, path: []const u8) !Response {
+    return request(allocator, method, port, path, null);
+}
 
 /// Make a GET request and return the response.
 pub fn get(allocator: std.mem.Allocator, port: u16, path: []const u8) !Response {
@@ -283,12 +308,24 @@ fn request(
 
     if (body) |b| {
         try req.sendBodyComplete(@constCast(b));
+    } else if (method.requestHasBody()) {
+        // std.http.Client asserts that PUT/POST/PATCH carry a body; send an
+        // empty one so a wrong-method probe (e.g. PUT /pursuits) can be made.
+        var empty: [0]u8 = .{};
+        try req.sendBodyComplete(&empty);
     } else {
         try req.sendBodiless();
     }
 
     var redirect_buf: [8192]u8 = undefined;
     var response = try req.receiveHead(&redirect_buf);
+
+    var allow: ?[]u8 = null;
+    errdefer if (allow) |a| allocator.free(a);
+    var headers = response.head.iterateHeaders();
+    while (headers.next()) |h| {
+        if (std.ascii.eqlIgnoreCase(h.name, "allow")) allow = try allocator.dupe(u8, h.value);
+    }
 
     var body_buf: [1024 * 1024]u8 = undefined;
     const reader = response.reader(&body_buf);
@@ -297,6 +334,7 @@ fn request(
     return Response{
         .status = response.head.status,
         .body = response_body,
+        .allow = allow,
         .allocator = allocator,
     };
 }
@@ -514,4 +552,74 @@ test "http: GET /pursuits/{id} for unknown id returns 404" {
     defer resp.deinit();
 
     try testing.expectEqual(std.http.Status.not_found, resp.status);
+}
+
+test "http: GET /pursuits?limit=0 returns 400 with details naming the parameter" {
+    const port: u16 = 8098;
+    const data_path = "/tmp/tt-http-query-limit.json";
+
+    var server = try TestServer.start(testing.allocator, port, data_path);
+    defer server.shutdown();
+
+    var resp = try get(testing.allocator, port, "/pursuits?limit=0");
+    defer resp.deinit();
+
+    try testing.expectEqual(std.http.Status.bad_request, resp.status);
+
+    const parsed = try parseJson(testing.allocator, resp.body);
+    defer parsed.deinit();
+    try testing.expectEqual(@as(i64, 400), parsed.value.object.get("status").?.integer);
+    try testing.expect(std.mem.indexOf(u8, parsed.value.object.get("details").?.string, "'limit'") != null);
+}
+
+test "http: GET /pursuits?type=nope returns 400 instead of an empty list" {
+    const port: u16 = 8099;
+    const data_path = "/tmp/tt-http-query-type.json";
+
+    var server = try TestServer.start(testing.allocator, port, data_path);
+    defer server.shutdown();
+
+    var resp = try get(testing.allocator, port, "/pursuits?type=nope");
+    defer resp.deinit();
+
+    try testing.expectEqual(std.http.Status.bad_request, resp.status);
+}
+
+test "http: POST /pursuits with a missing field returns 400 whose details name it" {
+    const port: u16 = 8090;
+    const data_path = "/tmp/tt-http-details.json";
+
+    var server = try TestServer.start(testing.allocator, port, data_path);
+    defer server.shutdown();
+
+    var resp = try post(testing.allocator, port, "/pursuits", "{\"name\":\"X\",\"type\":\"training\",\"started_at\":\"2026-06-01T00:00:00Z\"}");
+    defer resp.deinit();
+
+    try testing.expectEqual(std.http.Status.bad_request, resp.status);
+
+    const parsed = try parseJson(testing.allocator, resp.body);
+    defer parsed.deinit();
+    try testing.expectEqualStrings("Field 'target_date' is required", parsed.value.object.get("details").?.string);
+}
+
+test "http: a wrong method returns 405 with an Allow header, on /health too" {
+    const port: u16 = 8089;
+    const data_path = "/tmp/tt-http-allow.json";
+
+    var server = try TestServer.start(testing.allocator, port, data_path);
+    defer server.shutdown();
+
+    var on_collection = try call(testing.allocator, .PUT, port, "/pursuits");
+    defer on_collection.deinit();
+    try testing.expectEqual(std.http.Status.method_not_allowed, on_collection.status);
+    try testing.expectEqualStrings("GET, POST", on_collection.allow.?);
+
+    var on_health = try call(testing.allocator, .TRACE, port, "/health");
+    defer on_health.deinit();
+    try testing.expectEqual(std.http.Status.method_not_allowed, on_health.status);
+    try testing.expectEqualStrings("GET", on_health.allow.?);
+
+    var ok = try get(testing.allocator, port, "/health");
+    defer ok.deinit();
+    try testing.expect(ok.allow == null);
 }

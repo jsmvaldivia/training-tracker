@@ -10,6 +10,9 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
+            // std.c.getenv / getpid: implicit on the native macOS build, but a
+            // cross target (x86_64-linux-musl for the container) must say so.
+            .link_libc = true,
         }),
     });
     b.installArtifact(exe);
@@ -76,6 +79,9 @@ fn addTests(
                 .root_source_file = b.path(tf),
                 .target = target,
                 .optimize = optimize,
+                // The test binaries pull in main.zig / store.zig, which call
+                // std.c; on Linux that needs libc linked explicitly.
+                .link_libc = true,
             }),
             .filters = filters,
         });

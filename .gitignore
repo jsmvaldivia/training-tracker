@@ -24,3 +24,6 @@ CLAUDE.local.md
 
 # Generated browser-test artifacts
 web/blob-report/
+
+# Schemathesis run cache (scripts/contract-test.sh)
+.schemathesis/

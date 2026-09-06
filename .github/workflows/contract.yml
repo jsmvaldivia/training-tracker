@@ -1,0 +1,60 @@
+# OpenAPI contract conformance (issue #36). Starts the Zig API on a scratch
+# store and lets Schemathesis check every operation in api/openapi.yaml —
+# status codes, response schemas, content types, unsupported methods, and
+# stateful link-based flows. The steps live in scripts/contract-test.sh so the
+# same run works locally. Not a required check yet: promote it in the branch
+# ruleset once it has been stable for a few runs (issue #19).
+name: contract
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "api/**"
+      - "schemathesis.toml"
+      - "scripts/contract-test.sh"
+      - ".github/workflows/contract.yml"
+      - "mise.toml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "api/**"
+      - "schemathesis.toml"
+      - "scripts/contract-test.sh"
+      - ".github/workflows/contract.yml"
+      - "mise.toml"
+
+permissions:
+  contents: read
+
+jobs:
+  schemathesis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      # Tool versions come from mise.toml — the single pin for Zig and Bun.
+      - uses: jdx/mise-action@v4
+        with:
+          cache: true
+
+      # uvx fetches the pinned Schemathesis at run time; no project dependency.
+      - uses: astral-sh/setup-uv@v10.0.1
+
+      - name: Cache Zig build artifacts
+        uses: actions/cache@v6
+        with:
+          path: api/.zig-cache
+          key: zig-cache-${{ runner.os }}-${{ hashFiles('mise.toml', 'api/build.zig', 'api/build.zig.zon') }}
+
+      - name: Run the contract suite
+        run: scripts/contract-test.sh
+
+      - name: Upload Schemathesis report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: schemathesis-report
+          path: .gate/contract/
+          if-no-files-found: ignore
