@@ -17,7 +17,8 @@ export interface PursuitsListResponse {
 
 // Build the list-endpoint envelope the API client expects:
 // `{ data, total, limit, offset }`. Honors `type` / `limit` / `offset` query
-// params so route-mocking mirrors the real backend's filtering/pagination.
+// params so route-mocking mirrors the real backend's filtering/pagination,
+// including its default page of 50 when no `limit` is sent.
 export function buildListResponse(
   pursuits: Pursuit[] = fixturePursuits,
   params: { type?: string; limit?: number; offset?: number } = {}
@@ -28,7 +29,7 @@ export function buildListResponse(
 
   const total = filtered.length;
   const offset = params.offset ?? 0;
-  const limit = params.limit ?? total;
+  const limit = params.limit ?? 50;
   const page = filtered.slice(offset, offset + limit);
 
   return { data: page, total, limit, offset };
