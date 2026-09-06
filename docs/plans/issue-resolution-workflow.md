@@ -11,7 +11,7 @@ Tracking issues: #37–#45 (new), plus #35 (perf baseline) as a prerequisite.
 
 | # | Area | Decision | Why |
 |---|------|----------|-----|
-| 1 | Split | Interactive half in the main session, autonomous half as a Workflow script | Subagents cannot talk to the user. Grilling and spec design need the user; everything after a READY verdict does not. |
+| 1 | Split | Interactive half in the main session (`resolve-issue` skill), autonomous half as a Workflow script (`build-issue`) | Subagents cannot talk to the user. Grilling and spec design need the user; everything after a READY verdict does not. |
 | 2 | Test order | Test-author writes outer acceptance tests only; implementers write unit tests inside red-green | Matches the outside-in loop `resource-implementer` already uses and avoids the horizontal-slice anti-pattern in the `tdd` skill. |
 | 3 | Seams | The triage brief lists the seams; implementers treat them as pre-approved | The `tdd` skill requires user confirmation of seams. In an autonomous run the brief is that confirmation. |
 | 4 | Spec | Read-only for every agent after triage; changes happen only via `oas-designer` in the interactive half, then re-triage | AGENTS.md: change the spec first, then implement. One entry point into the workflow. |

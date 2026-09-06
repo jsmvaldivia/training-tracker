@@ -3,6 +3,8 @@
 Domain vocabulary and rules for Training Tracker. The human is the source of
 truth here. Entries are marked **asserted** until verified against code; where
 the code disagrees, the conflict is logged in [discrepancies.md](discrepancies.md).
+`Maps to` names the code that implements the term; `none` means the term is
+not implemented yet (tracked by the issue named there).
 
 ### Pursuit
 A thing you are working toward — a certification or a training — with a name, a
@@ -20,8 +22,12 @@ target date, and progress over time. The core entity of the app.
   - May carry [[tag]]s (filtering axis) and [[resource]]s (learning material).
 - Dates: `target_date` (timeline axis), `started_at`, `completed_at`, `expires_at`.
 - Related: [[milestone]], [[time-progress]], [[achievement-progress]], [[plan]], [[overdue]], [[timeline]], [[status]], [[tag]], [[resource]], [[renewal]]
-- Maps to: none (no schema yet)
-Source: jsmvaldivia, 2026-06-16 · asserted
+- Maps to: `api/openapi.yaml` (`Pursuit`, `PursuitCreate`, `PursuitUpdate`,
+  `/pursuits`, `/pursuits/{id}`); `api/src/store.zig` (`Store.create`,
+  `update`, `delete`, `list`, `get`); `api/src/pursuits.zig` (handlers);
+  `web/src/types.ts` (`Pursuit`); `web/src/api.ts`. `leads_to` and the
+  renewal link: none (issue #27).
+Source: jsmvaldivia, 2026-06-16 · verified against code 2026-09-05 (`started_at` is required by the API — see discrepancies)
 
 ### Milestone
 A named, dated mark on a Pursuit's timeline representing a checkpoint (e.g.
@@ -33,8 +39,11 @@ A named, dated mark on a Pursuit's timeline representing a checkpoint (e.g.
   - Has its own date so it lands on the [[timeline]].
   - Achieved milestones feed [[achievement-progress]].
 - Related: [[pursuit]], [[achievement-progress]], [[timeline]]
-- Maps to: none
-Source: jsmvaldivia, 2026-06-16 · asserted
+- Maps to: `api/openapi.yaml` (`Milestone`, `MilestoneCreate`, `MilestoneUpdate`,
+  `/pursuits/{id}/milestones[/{milestoneId}]`); `api/src/store.zig`
+  (`createMilestone`, `updateMilestone`, `deleteMilestone`; `achieved_at`
+  stamped on `achieved`, cleared on `pending`); `web/src/types.ts` (`Milestone`).
+Source: jsmvaldivia, 2026-06-16 · verified against code 2026-09-05
 
 ### Time Progress
 A Pursuit's elapsed-time gauge: how much of the runway between start and
@@ -45,8 +54,9 @@ deadline has passed.
   - Past `target_date` and not completed → clamped at 100% and flagged [[overdue]]
     (never shown above 100%).
 - Related: [[pursuit]], [[achievement-progress]], [[overdue]]
-- Maps to: derived value (not stored)
-Source: jsmvaldivia, 2026-06-16 · asserted
+- Maps to: derived, not stored — `web/src/utils.ts` (`calculateDerivedState`,
+  `timeProgress`); rendered by `web/src/components/ProgressBars.tsx`.
+Source: jsmvaldivia, 2026-06-16 · verified against code 2026-09-05
 
 ### Achievement Progress
 A Pursuit's actual-completion gauge: the share of milestones reached.
@@ -57,16 +67,21 @@ A Pursuit's actual-completion gauge: the share of milestones reached.
     schedule; achievement ahead of time = ahead. The gap is the key dashboard
     signal.
 - Related: [[pursuit]], [[milestone]], [[time-progress]]
-- Maps to: derived value (not stored)
-Source: jsmvaldivia, 2026-06-16 · asserted
+- Maps to: derived, not stored — `web/src/utils.ts` (`calculateDerivedState`,
+  `achievementProgress`, and the `signal` gap: behind above 15 points, ahead
+  below −15); rendered by `web/src/components/ProgressBars.tsx` and the
+  card badge in `web/src/components/PursuitCard.tsx`.
+Source: jsmvaldivia, 2026-06-16 · verified against code 2026-09-05
 
 ### Overdue
 State of a Pursuit (or Milestone) past its `target_date` without completion.
 - Rules: surfaced as a flag / red marker on the [[timeline]]; [[time-progress]]
   clamps at 100% rather than exceeding it.
 - Related: [[pursuit]], [[time-progress]], [[timeline]]
-- Maps to: derived state
-Source: jsmvaldivia, 2026-06-16 · asserted
+- Maps to: derived — pursuits: `web/src/utils.ts` (`calculateDerivedState`,
+  `isOverdue`), rendered on the card, the panel, and the timeline bar;
+  milestones: `isMilestoneOverdue` in the same file (issue #29).
+Source: jsmvaldivia, 2026-06-16 · verified against code 2026-09-05
 
 ### Plan
 A titled, free-text (markdown) document capturing strategy and notes that span
@@ -77,7 +92,7 @@ several pursuits (e.g. "2026 Cloud Career Plan").
   - Distinct from a Pursuit's own private `description`/`notes`, which belongs to
     a single pursuit.
 - Related: [[pursuit]]
-- Maps to: none
+- Maps to: none (issue #26 — concept to be confirmed before spec work)
 Source: jsmvaldivia, 2026-06-16 · asserted
 
 ### Timeline
@@ -87,8 +102,10 @@ The primary view: all pursuits and their milestones laid out along time.
   - Draws each pursuit's `started_at`→`completed_at` span.
   - Shows [[milestone]] marks and [[overdue]] flags.
 - Related: [[pursuit]], [[milestone]], [[overdue]]
-- Maps to: none
-Source: jsmvaldivia, 2026-06-16 · asserted
+- Maps to: `web/src/components/TimelineView.tsx` (bar `started_at` →
+  `target_date`, `completed_at` replaces the end when set — see discrepancies;
+  milestone markers; today marker).
+Source: jsmvaldivia, 2026-06-16 · verified against code 2026-09-05 (span rule differs — see discrepancies)
 
 ### Status
 The explicit lifecycle state of a [[pursuit]], independent of (but consistent
@@ -100,8 +117,11 @@ with) its dates.
     set; `expired` with `expires_at` passed (certifications).
   - Drives queries and the [[timeline]]; the source of truth for "where is this".
 - Related: [[pursuit]], [[renewal]], [[overdue]]
-- Maps to: none
-Source: jsmvaldivia, 2026-06-16 · asserted
+- Maps to: `api/openapi.yaml` (`Status` enum); `api/src/store.zig` (`statuses`;
+  `completed_at` stamped on the transition to `completed`); `web/src/types.ts`
+  (`PursuitStatus`); the dropdown in `web/src/components/PursuitDetailPanel.tsx`.
+  `expired` is accepted, never derived — see discrepancies (issue #28).
+Source: jsmvaldivia, 2026-06-16 · verified against code 2026-09-05 (`expired` rule not implemented — see discrepancies)
 
 ### Tag
 A lightweight label on a [[pursuit]] for filtering and grouping (e.g. `cloud`,
@@ -111,8 +131,10 @@ A lightweight label on a [[pursuit]] for filtering and grouping (e.g. `cloud`,
   - A **filtering** axis — distinct from a [[plan]] (narrative) and a
     [[milestone]] (checkpoint).
 - Related: [[pursuit]], [[plan]]
-- Maps to: none
-Source: jsmvaldivia, 2026-06-16 · asserted
+- Maps to: `api/openapi.yaml` (`tags`, max 20 of 1–50 characters);
+  `api/src/store.zig` (`parseTags`); rendered by `web/src/components/PursuitCard.tsx`
+  and the detail panel. Filtering by tag: none — see discrepancies.
+Source: jsmvaldivia, 2026-06-16 · verified against code 2026-09-05 (not filterable — see discrepancies)
 
 ### Resource
 A piece of learning material attached to a [[pursuit]] (course, book, lab,
@@ -122,7 +144,7 @@ article).
   - Distinct from a [[milestone]] (a resource is material; a milestone is a
     checkpoint) — though finishing a resource may correspond to a milestone.
 - Related: [[pursuit]], [[milestone]]
-- Maps to: none
+- Maps to: none (issue #25 — spec first with `oas-designer`, then implement)
 Source: jsmvaldivia, 2026-06-16 · asserted
 
 ### Renewal
@@ -136,5 +158,6 @@ linked back to the original.
   - Typically triggered as `expires_at` approaches; the original moves to
     [[status]] `expired`.
 - Related: [[pursuit]], [[status]], [[overdue]]
-- Maps to: none
+- Maps to: none (issue #27 — `leads_to` and a renew action are absent from the
+  spec; depends on the `expired` rule, issue #28)
 Source: jsmvaldivia, 2026-06-16 · asserted

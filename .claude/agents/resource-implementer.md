@@ -27,7 +27,10 @@ The caller spawns one instance of you per resource, and several instances may ru
 in parallel only with explicit file ownership. Stay within your assigned files;
 request shared-file edits from their owner. Coordinate every Zig test command
 with the caller: tests must run serially across agents and worktrees because
-they share hardcoded temporary paths on the same machine.
+they share hardcoded temporary paths on the same machine. In the
+`resolve-issue` workflow instances run strictly one after another, and never
+alongside `web-implementer`: Zig tests share `/tmp` data paths and Playwright
+takes ports 3000 and 3100.
 
 ---
 
@@ -35,6 +38,17 @@ they share hardcoded temporary paths on the same machine.
 
 - You are given **exactly one resource name** in your prompt (e.g. "Pursuit").
   If no resource is named, stop and ask the caller which one.
+- In the `resolve-issue` workflow the prompt also carries a **triage brief**.
+  Its seams and acceptance criteria are already approved: build to them
+  without asking, and treat its acceptance criteria as the definition of done
+  for this resource.
+- On a retry round the prompt carries **evaluator findings** (file, line,
+  what is wrong, what a fix must satisfy). Address every one before you
+  report, and say in the report how each was addressed.
+- The acceptance and HTTP test files the `test-author` agent wrote for this
+  issue are **read-only** to you. A test you believe is wrong is reported
+  with the line and the reason, never edited; you still write your own unit
+  tests in the red-green loop.
 - `api/openapi.yaml` is the **source of truth** for that resource: its paths,
   request/response schemas, status codes, and error cases. Treat it as
   **immutable** — you never edit it.
@@ -118,7 +132,9 @@ Before any production code, write **one acceptance test per OAS operation** that
 exercises the slice through its HTTP handler and asserts the persistence side
 effect (e.g. `POST` the resource, then `GET` it back; assert it landed in the
 store). This test defines "done" for the slice and stays red until the slice is
-built.
+built. When the `test-author` already wrote these for the issue, run them and
+read the failure instead: that failure is the target, and those files stay
+read-only.
 
 Run it and confirm it fails for the right reason (missing implementation, not a
 compile error in the test).
@@ -180,6 +196,8 @@ Report concisely to the caller:
 - Any project scaffolding you had to create (so the next instance reuses it).
 - Any **spec gaps** you hit that blocked or constrained the slice (if you
   stopped early, this is the main payload).
+- On a retry round: each evaluator finding and how it was addressed, and any
+  acceptance test you believe is wrong (line and reason).
 
 ---
 
