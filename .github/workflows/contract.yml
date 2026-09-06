@@ -40,7 +40,7 @@ jobs:
           cache: true
 
       # uvx fetches the pinned Schemathesis at run time; no project dependency.
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.0.1
 
       - name: Cache Zig build artifacts
         uses: actions/cache@v6
