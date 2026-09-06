@@ -185,6 +185,20 @@ test.describe('Pursuit Detail Panel', () => {
     await expect(panel.getByText(/overdue/i).first()).toBeVisible();
   });
 
+  test('flags pending milestones past their date as overdue', async ({ page }) => {
+    // K8s has two pending milestones dated in the past and one achieved one.
+    const card = page.locator('div.cursor-pointer').filter({ hasText: 'Advanced Kubernetes Patterns' }).first();
+    await card.click();
+    await expect(page.getByRole('heading', { name: 'Milestones' })).toBeVisible({ timeout: 3000 });
+
+    const panel = page.locator('[class*="fixed"][class*="right-0"]').first();
+    const pendingPast = panel.locator('[data-milestone]').filter({ hasText: 'Module 2: Operators' });
+    const achievedPast = panel.locator('[data-milestone]').filter({ hasText: 'Module 1: Architecture' });
+
+    await expect(pendingPast.getByText('Overdue')).toBeVisible();
+    await expect(achievedPast.getByText('Overdue')).toHaveCount(0);
+  });
+
   test('shows completed date for completed pursuits', async ({ page }) => {
     // React pursuit is completed in mock data
     const card = page.locator('div.cursor-pointer').filter({ hasText: 'React Performance Tuning' }).first();

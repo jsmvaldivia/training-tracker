@@ -1,10 +1,15 @@
 import { describe, expect, it, mock } from 'bun:test';
 import type { Milestone, Pursuit } from '../types';
 import {
+  appendMilestone,
+  appendPursuit,
   applyMilestonePatch,
   applyPursuitPatch,
   reconcileMilestone,
   reconcilePursuit,
+  removeMilestone,
+  removePursuit,
+  replaceMilestone,
   runOptimisticUpdate,
 } from './pursuitState';
 
@@ -96,6 +101,20 @@ describe('runOptimisticUpdate', () => {
     expect(states[1][0].milestones[0].achieved_at).toBe('2026-06-21T10:00:00Z'); // reconciled
   });
 
+  it('resolves true on success and false after a rollback', async () => {
+    const ok = await runOptimisticUpdate(
+      { optimistic, snapshot: base, call: () => Promise.resolve(milestone('m1')), reconcile: () => optimistic },
+      () => {}
+    );
+    const failed = await runOptimisticUpdate(
+      { optimistic, snapshot: base, call: () => Promise.reject(new Error('x')), reconcile: () => optimistic },
+      () => {},
+      () => {}
+    );
+    expect(ok).toBe(true);
+    expect(failed).toBe(false);
+  });
+
   it('rolls back to the snapshot and reports the error message on failure', async () => {
     const states: Pursuit[][] = [];
     const setPursuits = (p: Pursuit[]) => states.push(p);
@@ -126,5 +145,53 @@ describe('runOptimisticUpdate', () => {
       onError
     );
     expect(onError).toHaveBeenCalledWith('Update failed');
+  });
+});
+
+describe('appendPursuit', () => {
+  it('adds the created pursuit at the end without touching the others', () => {
+    const pursuits = [pursuit('p1')];
+    const next = appendPursuit(pursuits, pursuit('p2'));
+    expect(next.map((p) => p.id)).toEqual(['p1', 'p2']);
+    expect(next[0]).toBe(pursuits[0]);
+    expect(pursuits).toHaveLength(1); // input untouched
+  });
+});
+
+describe('removePursuit', () => {
+  it('drops the pursuit by id and keeps the rest by identity', () => {
+    const pursuits = [pursuit('p1'), pursuit('p2'), pursuit('p3')];
+    const next = removePursuit(pursuits, 'p2');
+    expect(next.map((p) => p.id)).toEqual(['p1', 'p3']);
+    expect(next[1]).toBe(pursuits[2]);
+    expect(pursuits).toHaveLength(3);
+  });
+});
+
+describe('appendMilestone', () => {
+  it('adds the milestone to its pursuit only', () => {
+    const pursuits = [pursuit('p1', [milestone('m1')]), pursuit('p2')];
+    const next = appendMilestone(pursuits, 'p1', milestone('tmp-1'));
+    expect(next[0].milestones.map((m) => m.id)).toEqual(['m1', 'tmp-1']);
+    expect(next[1]).toBe(pursuits[1]);
+  });
+});
+
+describe('replaceMilestone', () => {
+  it('swaps the optimistic placeholder for the server milestone', () => {
+    const pursuits = [pursuit('p1', [milestone('m1'), milestone('tmp-1')])];
+    const server = milestone('m9');
+    const next = replaceMilestone(pursuits, 'p1', 'tmp-1', server);
+    expect(next[0].milestones.map((m) => m.id)).toEqual(['m1', 'm9']);
+    expect(next[0].milestones[1]).toBe(server);
+  });
+});
+
+describe('removeMilestone', () => {
+  it('drops the milestone and leaves other pursuits by identity', () => {
+    const pursuits = [pursuit('p1', [milestone('m1'), milestone('m2')]), pursuit('p2', [milestone('m3')])];
+    const next = removeMilestone(pursuits, 'p1', 'm1');
+    expect(next[0].milestones.map((m) => m.id)).toEqual(['m2']);
+    expect(next[1]).toBe(pursuits[1]);
   });
 });

@@ -1,7 +1,7 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { differenceInDays, isPast, isBefore, parseISO } from 'date-fns';
-import { Pursuit, PursuitDerivedState } from './types';
+import { differenceInDays, isBefore, parseISO } from 'date-fns';
+import { Milestone, Pursuit, PursuitDerivedState } from './types';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -22,7 +22,9 @@ now: Date = new Date())
     timeProgress = 100;
   } else if (isBefore(now, startedAt)) {
     timeProgress = 0;
-  } else if (isPast(targetDate)) {
+  } else if (isBefore(targetDate, now)) {
+    // Compared against the injected `now` (isPast would read the wall clock
+    // and ignore the parameter).
     timeProgress = 100;
     isOverdue = true;
   } else {
@@ -67,6 +69,9 @@ now: Date = new Date())
   };
 }
 
-export function generateId() {
-  return Math.random().toString(36).substring(2, 9);
+// A milestone is overdue while it is still pending past its date (glossary:
+// Overdue applies to milestones as well as pursuits). Achieving it clears the
+// flag no matter how late; there is no separate "achieved late" state.
+export function isMilestoneOverdue(milestone: Milestone, now: Date = new Date()): boolean {
+  return milestone.state === 'pending' && isBefore(parseISO(milestone.date), now);
 }

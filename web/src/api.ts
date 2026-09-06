@@ -12,7 +12,7 @@ interface PursuitsListResponse {
   offset: number;
 }
 
-interface PursuitCreate {
+export interface PursuitCreate {
   name: string;
   type: PursuitType;
   status?: 'planned' | 'in_progress' | 'completed' | 'expired';
@@ -39,7 +39,7 @@ export interface PursuitUpdate {
   tags?: string[];
 }
 
-interface MilestoneCreate {
+export interface MilestoneCreate {
   name: string;
   date: string;
   state?: MilestoneState;
@@ -66,6 +66,22 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
   }
 
   return response.json();
+}
+
+// For 204 responses: same error mapping as fetchJSON, no body to parse.
+async function fetchVoid(url: string, options?: RequestInit): Promise<void> {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options?.headers,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: response.statusText }));
+    throw new Error(error.message || `HTTP ${response.status}`);
+  }
 }
 
 export const api = {
@@ -112,7 +128,7 @@ export const api = {
 
   // Delete pursuit
   async deletePursuit(id: string): Promise<void> {
-    await fetch(`${API_BASE}/pursuits/${id}`, { method: 'DELETE' });
+    await fetchVoid(`${API_BASE}/pursuits/${id}`, { method: 'DELETE' });
   },
 
   // Create milestone
@@ -137,7 +153,7 @@ export const api = {
 
   // Delete milestone
   async deleteMilestone(pursuitId: string, milestoneId: string): Promise<void> {
-    await fetch(`${API_BASE}/pursuits/${pursuitId}/milestones/${milestoneId}`, {
+    await fetchVoid(`${API_BASE}/pursuits/${pursuitId}/milestones/${milestoneId}`, {
       method: 'DELETE',
     });
   },

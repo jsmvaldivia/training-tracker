@@ -4,7 +4,10 @@ import { ToastProvider, useToast } from './components/Toast';
 import { DashboardHeader } from './components/DashboardHeader';
 import { PursuitCard } from './components/PursuitCard';
 import { PursuitDetailPanel } from './components/PursuitDetailPanel';
+import { PursuitForm } from './components/PursuitForm';
 import { TimelineView } from './components/TimelineView';
+import { toCreateBody, toIsoDate, toUpdatePatch } from './pursuitForm';
+import type { PursuitFormValues } from './pursuitForm';
 
 export function App() {
   // usePursuits calls useToast(), so App must render inside the provider.
@@ -17,12 +20,22 @@ export function App() {
 
 function AppContent() {
   const toast = useToast();
-  const { pursuits, loading, error, updateMilestone, updatePursuit } = usePursuits({
-    onError: toast.error,
-  });
+  const {
+    pursuits,
+    loading,
+    error,
+    updateMilestone,
+    updatePursuit,
+    createPursuit,
+    deletePursuit,
+    createMilestone,
+    deleteMilestone,
+  } = usePursuits({ onError: toast.error });
   const [view, setView] = useState<'dashboard' | 'timeline'>('dashboard');
   const [filterType, setFilterType] = useState<'all' | 'certification' | 'training'>('all');
   const [selectedPursuitId, setSelectedPursuitId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   const filteredPursuits = pursuits.filter((p) => {
     if (filterType !== 'all' && p.type !== filterType) return false;
@@ -44,6 +57,34 @@ function AppContent() {
     void updatePursuit(selectedPursuit.id, { status });
   };
 
+  const handleAddMilestone = (name: string, date: string) => {
+    if (!selectedPursuit) return;
+    void createMilestone(selectedPursuit.id, { name, date: toIsoDate(date) });
+  };
+
+  const handleDeleteMilestone = (milestoneId: string) => {
+    if (!selectedPursuit) return;
+    void deleteMilestone(selectedPursuit.id, milestoneId);
+  };
+
+  const handleDelete = () => {
+    if (!selectedPursuit) return;
+    setSelectedPursuitId(null);
+    void deletePursuit(selectedPursuit.id);
+  };
+
+  const handleCreate = async (values: PursuitFormValues) => {
+    const created = await createPursuit(toCreateBody(values));
+    return created !== null;
+  };
+
+  const handleEdit = async (values: PursuitFormValues) => {
+    if (!selectedPursuit) return false;
+    const patch = toUpdatePatch(values, selectedPursuit);
+    if (Object.keys(patch).length === 0) return true; // nothing to send
+    return updatePursuit(selectedPursuit.id, patch);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 selection:bg-indigo-100 selection:text-indigo-900">
       <div className="max-w-6xl mx-auto px-4 py-8">
@@ -53,6 +94,7 @@ function AppContent() {
           onViewChange={setView}
           filterType={filterType}
           onFilterTypeChange={setFilterType}
+          onAddPursuit={() => setCreating(true)}
         />
 
         <main>
@@ -97,7 +139,21 @@ function AppContent() {
         onClose={() => setSelectedPursuitId(null)}
         onToggleMilestone={handleToggleMilestone}
         onStatusChange={handleStatusChange}
+        onEdit={() => setEditing(true)}
+        onDelete={handleDelete}
+        onAddMilestone={handleAddMilestone}
+        onDeleteMilestone={handleDeleteMilestone}
       />
+
+      {creating && <PursuitForm onSubmit={handleCreate} onClose={() => setCreating(false)} />}
+      {editing && selectedPursuit && (
+        <PursuitForm
+          key={selectedPursuit.id}
+          pursuit={selectedPursuit}
+          onSubmit={handleEdit}
+          onClose={() => setEditing(false)}
+        />
+      )}
     </div>
   );
 }

@@ -8,13 +8,15 @@ interface DashboardHeaderProps {
   onViewChange: (view: 'dashboard' | 'timeline') => void;
   filterType: 'all' | 'certification' | 'training';
   onFilterTypeChange: (type: 'all' | 'certification' | 'training') => void;
+  onAddPursuit: () => void;
 }
 export function DashboardHeader({
   pursuits,
   view,
   onViewChange,
   filterType,
-  onFilterTypeChange
+  onFilterTypeChange,
+  onAddPursuit
 }: DashboardHeaderProps) {
   const stats = pursuits.reduce(
     (acc, pursuit) => {
@@ -83,7 +85,9 @@ export function DashboardHeader({
             <option value="training">Trainings</option>
           </select>
 
-          <button className="flex items-center gap-1.5 h-9 px-4 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors">
+          <button
+            onClick={onAddPursuit}
+            className="flex items-center gap-1.5 h-9 px-4 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors">
             <Plus className="w-4 h-4" />
             Add Pursuit
           </button>

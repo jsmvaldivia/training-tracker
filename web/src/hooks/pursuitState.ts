@@ -27,6 +27,43 @@ export function reconcileMilestone(
   );
 }
 
+// `POST /pursuits` returns the created Pursuit — append it. Not optimistic:
+// there is nothing to show before the server assigns the id.
+export function appendPursuit(pursuits: Pursuit[], created: Pursuit): Pursuit[] {
+  return [...pursuits, created];
+}
+
+export function removePursuit(pursuits: Pursuit[], pursuitId: string): Pursuit[] {
+  return pursuits.filter((p) => p.id !== pursuitId);
+}
+
+function mapMilestones(
+  pursuits: Pursuit[],
+  pursuitId: string,
+  update: (milestones: Milestone[]) => Milestone[]
+): Pursuit[] {
+  return pursuits.map((p) => (p.id === pursuitId ? { ...p, milestones: update(p.milestones) } : p));
+}
+
+// Optimistic add: the placeholder (temporary id) shows at once; `replaceMilestone`
+// swaps it for the server's milestone when `POST .../milestones` returns.
+export function appendMilestone(pursuits: Pursuit[], pursuitId: string, milestone: Milestone): Pursuit[] {
+  return mapMilestones(pursuits, pursuitId, (ms) => [...ms, milestone]);
+}
+
+export function replaceMilestone(
+  pursuits: Pursuit[],
+  pursuitId: string,
+  placeholderId: string,
+  milestone: Milestone
+): Pursuit[] {
+  return mapMilestones(pursuits, pursuitId, (ms) => ms.map((m) => (m.id === placeholderId ? milestone : m)));
+}
+
+export function removeMilestone(pursuits: Pursuit[], pursuitId: string, milestoneId: string): Pursuit[] {
+  return mapMilestones(pursuits, pursuitId, (ms) => ms.filter((m) => m.id !== milestoneId));
+}
+
 // --- Optimistic appliers: the local guess shown before the server responds --
 
 export function applyMilestonePatch(
@@ -68,18 +105,21 @@ export interface OptimisticUpdate<T> {
 
 // Show the optimistic guess, call the server, reconcile on success, and roll
 // back to the snapshot + report on failure. `setPursuits` and `onError` are
-// injected so this is testable without React.
+// injected so this is testable without React. Resolves true on success so a
+// caller with its own UI (the edit form) knows whether to close.
 export async function runOptimisticUpdate<T>(
   update: OptimisticUpdate<T>,
   setPursuits: (pursuits: Pursuit[]) => void,
   onError?: (message: string) => void
-): Promise<void> {
+): Promise<boolean> {
   setPursuits(update.optimistic);
   try {
     const result = await update.call();
     setPursuits(update.reconcile(result));
+    return true;
   } catch (err) {
     setPursuits(update.snapshot);
     onError?.(err instanceof Error ? err.message : 'Update failed');
+    return false;
   }
 }

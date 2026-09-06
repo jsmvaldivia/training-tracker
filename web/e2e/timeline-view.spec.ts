@@ -37,6 +37,15 @@ test.describe('Timeline View', () => {
     await expect(page.getByText('AWS Certified Solutions Architect')).toBeVisible();
   });
 
+  test('marks overdue milestones on the timeline', async ({ page }) => {
+    // K8s: "Module 2: Operators" and "Final Lab" are pending and in the past.
+    const overdueMarkers = page.locator('[title*="overdue" i]');
+    await expect(overdueMarkers).toHaveCount(2);
+    await expect(overdueMarkers.first()).toHaveAttribute('title', /Module 2: Operators/);
+    // Achieved or future milestones are never marked overdue.
+    await expect(page.locator('[title*="Module 1: Architecture"]')).not.toHaveAttribute('title', /overdue/i);
+  });
+
   test('color codes pursuits by status', async ({ page }) => {
     // Just verify that color-coded sections exist
     // Overdue pursuits should show in overdue section

@@ -97,9 +97,10 @@ test.describe('Filters and View Toggle', () => {
     await expect(page.getByText('AWS Certified Solutions Architect')).toBeVisible();
   });
 
-  test('Add Pursuit button is visible', async ({ page }) => {
+  test('Add Pursuit button opens the create form', async ({ page }) => {
     const addButton = page.getByRole('button', { name: /add pursuit/i });
     await expect(addButton).toBeVisible();
-    // Note: button is not wired yet, so we just verify it renders
+    await addButton.click();
+    await expect(page.getByRole('dialog', { name: 'New pursuit' })).toBeVisible();
   });
 });
