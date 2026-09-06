@@ -24,7 +24,7 @@ for tool in zig curl uvx; do
   command -v "$tool" >/dev/null || { echo "error: $tool is required" >&2; exit 2; }
 done
 
-scratch="$(mktemp -t tt-contract.XXXXXX).json"
+scratch="$(mktemp "${TMPDIR:-/tmp}/tt-contract.XXXXXX").json"
 cp api/data.seed.json "$scratch"
 
 cleanup() {
