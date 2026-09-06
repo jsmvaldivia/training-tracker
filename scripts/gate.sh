@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# The local gate (issue #38): every deterministic check, in order, one process.
+# The local gate (issues #38, #12): every deterministic check, in order, one process.
 # Stops at the first failure and exits non-zero. Writes .gate/result.json so the
 # evaluator agent reads results instead of re-running commands. A step that
 # does not run is recorded as "skipped" with a reason — never as "passed".
@@ -128,6 +128,7 @@ run_step oas-lint   .    scripts/validate-oas.sh
 run_step zig-test   api  zig build test -j1
 run_step unit-cov   web  bun run test:unit
 run_step e2e        web  bun run test:e2e
+run_step e2e-live   .    scripts/e2e-live.sh
 
 if (( failed )); then
   skip_step perf "earlier step failed: $skip_reason"

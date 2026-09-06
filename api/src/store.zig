@@ -131,6 +131,19 @@ pub const Store = struct {
         self.gpa.destroy(self.arena);
     }
 
+    /// Discards the in-memory tree and re-reads the file. The handler calls
+    /// this after a failed `flush` so a 500 never leaves memory ahead of disk:
+    /// the client rolled back on the 500, and a later successful flush would
+    /// otherwise persist the rejected change behind its back.
+    pub fn reload(self: *Store) !void {
+        const fresh = try Store.init(self.gpa, self.io, self.path);
+        self.arena.deinit();
+        self.gpa.destroy(self.arena);
+        self.arena = fresh.arena;
+        self.root = fresh.root;
+        self.seq = fresh.seq;
+    }
+
     fn alloc(self: *Store) Allocator {
         return self.arena.allocator();
     }

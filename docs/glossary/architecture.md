@@ -53,8 +53,9 @@ machine-readable result. Agents judge; this script executes.
   worktrees start without `node_modules`), `fmt` (`zig fmt --check`), `oas-lint`
   (`scripts/validate-oas.sh`), `zig-test` (`zig build test`), `unit-cov`
   (`bun test src` with the coverage threshold), `e2e` (`bun test:e2e`),
-  `perf` (runs `scripts/perf-snapshot.sh` when it exists, else skipped with a
-  reason — issue #35).
+  `e2e-live` (`scripts/e2e-live.sh`: real API on a scratch store, no mocks —
+  issue #12), `perf` (runs `scripts/perf-snapshot.sh` when it exists, else
+  skipped with a reason — issue #35).
 - Output: `.gate/result.json` (gitignored) — `overall`, commit, branch, and one
   entry per step with `status` (`passed` | `failed` | `skipped`), exit code,
   duration, reason, and the output tail. A step that did not run is `skipped`,

@@ -46,12 +46,14 @@ if [ ! -f api/data.json ]; then
   cp api/data.seed.json api/data.json
 fi
 
+# Both servers read PORT, so each gets its own value here rather than
+# whatever the parent shell (or an IDE preview runner) exported.
 echo "starting API on http://127.0.0.1:8080 ..."
-( cd api && exec zig build run ) &
+( cd api && PORT=8080 exec zig build run ) &
 pids+=("$!")
 
 echo "starting web on http://localhost:3000 (proxies /api -> :8080) ..."
-( cd web && exec bun dev ) &
+( cd web && PORT=3000 BACKEND_URL=http://127.0.0.1:8080 exec bun dev ) &
 pids+=("$!")
 
 # Bash 3.2 has no wait -n. Bash reaps completed jobs while retaining their

@@ -8,6 +8,7 @@
     "start": "bun server.ts",
     "test:unit": "bun test src",
     "test:e2e": "bun node_modules/@playwright/test/cli.js test",
+    "test:e2e:live": "bash ../scripts/e2e-live.sh",
     "test:e2e:ui": "bun node_modules/@playwright/test/cli.js test --ui",
     "test:e2e:headed": "bun node_modules/@playwright/test/cli.js test --headed",
     "test:e2e:debug": "bun node_modules/@playwright/test/cli.js test --debug"
