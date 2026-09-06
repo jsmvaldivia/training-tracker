@@ -62,11 +62,12 @@ on a process outside Bun.
 `WEB_PORT`; the script refuses to start when one is held. Extra arguments go
 to Playwright: `bun test:e2e:live -g lifecycle`, `bun test:e2e:live --ui`.
 
-Specs: `list-pages` (sixty seeded pursuits push the store past one API page;
-the dashboard still shows them all), `smoke` (the seed renders),
-`status-lifecycle`, `milestone-achievement`, and `rollback` (a real 500 — the
-spec makes the store directory read-only for one request, so the API's flush
-fails). `e2e-live/support/api.ts` seeds and reads records through the proxy
+Specs: `expired-status` (a completed certification past its `expires_at`
+reads `expired` from the real API and renders so), `list-pages` (sixty seeded
+pursuits push the store past one API page; the dashboard still shows them
+all), `smoke` (the seed renders), `status-lifecycle`, `milestone-achievement`,
+and `rollback` (a real 500 — the spec makes the store directory read-only for
+one request, so the API's flush fails). `e2e-live/support/api.ts` seeds and reads records through the proxy
 with unique names, so every spec asserts through the UI and then through
 `GET /pursuits/{id}`.
 

@@ -114,14 +114,19 @@ with) its dates.
 - Rules:
   - One of `planned` → `in_progress` → `completed` → `expired`.
   - `in_progress` aligns with `started_at` set; `completed` with `completed_at`
-    set; `expired` with `expires_at` passed (certifications).
+    set.
+  - `expired` is derived: a `completed` pursuit whose `expires_at` has passed
+    reads as `expired` on every API read, and nothing is stored. A pursuit
+    never completed cannot expire (it is [[overdue]] instead). Setting
+    `expired` by hand is still allowed and kept.
   - Drives queries and the [[timeline]]; the source of truth for "where is this".
 - Related: [[pursuit]], [[renewal]], [[overdue]]
 - Maps to: `api/openapi.yaml` (`Status` enum); `api/src/store.zig` (`statuses`;
-  `completed_at` stamped on the transition to `completed`); `web/src/types.ts`
-  (`PursuitStatus`); the dropdown in `web/src/components/PursuitDetailPanel.tsx`.
-  `expired` is accepted, never derived — see discrepancies (issue #28).
-Source: jsmvaldivia, 2026-06-16 · verified against code 2026-09-05 (`expired` rule not implemented — see discrepancies)
+  `completed_at` stamped on the transition to `completed`; `derivedStatus` and
+  `Store.present` for the `expired` rule, applied by every pursuit response in
+  `api/src/pursuits.zig`); `web/src/types.ts` (`PursuitStatus`); the dropdown
+  in `web/src/components/PursuitDetailPanel.tsx`.
+Source: jsmvaldivia, 2026-06-16 · verified against code 2026-09-06
 
 ### Tag
 A lightweight label on a [[pursuit]] for filtering and grouping (e.g. `cloud`,
@@ -159,5 +164,5 @@ linked back to the original.
     [[status]] `expired`.
 - Related: [[pursuit]], [[status]], [[overdue]]
 - Maps to: none (issue #27 — `leads_to` and a renew action are absent from the
-  spec; depends on the `expired` rule, issue #28)
+  spec). The `expired` rule it relies on is in place — see [[status]].
 Source: jsmvaldivia, 2026-06-16 · asserted

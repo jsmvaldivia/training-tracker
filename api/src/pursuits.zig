@@ -124,9 +124,13 @@ fn listPursuits(gpa: Allocator, s: *Store, query: []const u8) Allocator.Error!Re
 
     const res = s.list(a, params.type_filter, params.limit, params.offset) catch return oomRaw(gpa);
 
-    // Build the PursuitsListResponse envelope as a Value.
+    // Build the PursuitsListResponse envelope as a Value. Each pursuit goes
+    // through `present`, so a derived status (issue #28) shows in the list.
     var arr = json.Array.init(a);
-    for (res.data) |p| arr.append(p) catch return oomRaw(gpa);
+    for (res.data) |p| {
+        const shown = s.present(a, p) catch return oomRaw(gpa);
+        arr.append(shown) catch return oomRaw(gpa);
+    }
 
     var obj = json.ObjectMap{};
     obj.put(a, "data", .{ .array = arr }) catch return oomRaw(gpa);
@@ -146,12 +150,12 @@ fn createPursuit(gpa: Allocator, s: *Store, body: []const u8) Allocator.Error!Re
 
     const created = s.create(parsed.value) catch |err| return mapStoreError(gpa, s, err);
     if (try persistOr500(gpa, s)) |r| return r;
-    return jsonResponse(gpa, .created, created);
+    return pursuitResponse(gpa, s, .created, created);
 }
 
 fn getPursuit(gpa: Allocator, s: *Store, id: []const u8) Allocator.Error!Response {
     const p = s.get(id) catch |err| return mapStoreError(gpa, s, err);
-    return jsonResponse(gpa, .ok, p);
+    return pursuitResponse(gpa, s, .ok, p);
 }
 
 fn updatePursuit(gpa: Allocator, s: *Store, id: []const u8, body: []const u8) Allocator.Error!Response {
@@ -163,7 +167,7 @@ fn updatePursuit(gpa: Allocator, s: *Store, id: []const u8, body: []const u8) Al
 
     const updated = s.update(id, parsed.value) catch |err| return mapStoreError(gpa, s, err);
     if (try persistOr500(gpa, s)) |r| return r;
-    return jsonResponse(gpa, .ok, updated);
+    return pursuitResponse(gpa, s, .ok, updated);
 }
 
 fn deletePursuit(gpa: Allocator, s: *Store, id: []const u8) Allocator.Error!Response {
@@ -334,6 +338,16 @@ fn parseBodyOr400(gpa: Allocator, body: []const u8) Allocator.Error!BodyOr400 {
             "Request body is not valid JSON";
         return .{ .err = try errorResponse(gpa, .bad_request, "Invalid JSON body", details) };
     }
+}
+
+/// A single pursuit as the API reports it: `Store.present` may replace the
+/// stored status with the derived one (issue #28) in a request-scoped copy,
+/// freed once the body is serialized.
+fn pursuitResponse(gpa: Allocator, s: *Store, status: std.http.Status, pursuit: Value) Allocator.Error!Response {
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const shown = s.present(arena.allocator(), pursuit) catch return oomRaw(gpa);
+    return jsonResponse(gpa, status, shown);
 }
 
 fn jsonResponse(gpa: Allocator, status: std.http.Status, value: Value) Allocator.Error!Response {

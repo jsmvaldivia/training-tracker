@@ -23,6 +23,7 @@ export interface SeedPursuit {
   status?: Pursuit['status'];
   started_at?: string;
   target_date?: string;
+  expires_at?: string;
   milestones?: Array<{ name: string; date: string; state?: Milestone['state'] }>;
 }
 

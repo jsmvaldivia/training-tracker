@@ -50,6 +50,7 @@ pub fn build(b: *std.Build) void {
         "src/store.zig",
         "src/pursuits.zig",
         "src/acceptance_milestones.zig",
+        "src/acceptance_expiry.zig",
     };
     // Integration tests: spin up a real HTTP server and talk to it over sockets.
     const http_files = [_][]const u8{
