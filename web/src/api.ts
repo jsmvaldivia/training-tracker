@@ -1,4 +1,5 @@
 import { Pursuit, PursuitType, MilestoneState } from './types';
+import { collectAllPages } from './pagination';
 
 // API client for Training Tracker backend (proxied via /api/* → http://127.0.0.1:8080)
 // All endpoints match the OpenAPI contract at api/openapi.yaml
@@ -103,6 +104,12 @@ export const api = {
 
     const url = `${API_BASE}/pursuits${query.toString() ? `?${query}` : ''}`;
     return fetchJSON(url);
+  },
+
+  // The whole list, walking the pages the contract imposes (limit ≤ 100).
+  // The UI filters in memory, so this is its only read of the list (#24).
+  async listAllPursuits(): Promise<Pursuit[]> {
+    return collectAllPages((params) => api.listPursuits(params));
   },
 
   // Get single pursuit by ID

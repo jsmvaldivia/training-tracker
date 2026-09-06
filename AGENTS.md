@@ -38,6 +38,12 @@ See `docs/setup.md` for Linux prerequisites and machine migration.
   The backend sets no CORS headers; the browser must stay same-origin.
 - `web/src/api.ts` is a hand-written client that mirrors `openapi.yaml`.
   When the spec changes, update it by hand — there is no codegen step.
+- The web app loads the whole pursuit list on start, walking the API's pages
+  (`limit=100`, `web/src/pagination.ts`), and filters by type in memory. No
+  server-side filter or pagination controls in the UI: one user has tens of
+  pursuits, and the header counts and the timeline need the full set anyway.
+  `type`, `limit`, and `offset` stay in the contract for scripts and tests
+  (issue #24).
 - Two environments only: local and prod. No staging, no per-env config splits.
 - Domain model: `docs/glossary/index.md` is the reference; log code-vs-intent
   conflicts in `docs/glossary/discrepancies.md`.

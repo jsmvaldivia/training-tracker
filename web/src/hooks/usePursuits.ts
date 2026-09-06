@@ -15,11 +15,12 @@ import {
   runOptimisticUpdate,
 } from './pursuitState';
 
-// usePursuits owns the pursuit list state end-to-end: it fetches the list on
-// mount (read path, issue #3) and exposes optimistic mutators (issue #4). Each
-// mutator applies the change locally, calls the API, reconciles the authoritative
-// server response, and rolls back + reports via `onError` on failure — so all
-// mutation/rollback logic lives in one place and components stay presentational.
+// usePursuits owns the pursuit list state end-to-end: it fetches the whole list
+// on mount (read path, issue #3; every API page, issue #24) and exposes
+// optimistic mutators (issue #4). Each mutator applies the change locally,
+// calls the API, reconciles the authoritative server response, and rolls
+// back + reports via `onError` on failure — so all mutation/rollback logic
+// lives in one place and components stay presentational.
 
 export interface UsePursuitsOptions {
   // Called with a human-readable message when a mutation fails and is rolled
@@ -66,10 +67,10 @@ export function usePursuits(options: UsePursuitsOptions = {}): UsePursuitsResult
     setError(null);
 
     api
-      .listPursuits()
-      .then((response) => {
+      .listAllPursuits()
+      .then((all) => {
         if (cancelled) return;
-        setPursuits(response.data);
+        setPursuits(all);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
