@@ -1,0 +1,68 @@
+# Frontend gate (issue #14): unit tests with the coverage threshold, the
+# mocked Playwright suite, and the Spectral lint of the contract, on every
+# push and PR to main that touches the web app or the contract. Runs
+# scripts/gate.sh with the backend-only steps skipped.
+name: frontend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - "api/openapi.yaml"
+      - "api/.spectral.yaml"
+      - "scripts/validate-oas.sh"
+      - "scripts/gate.sh"
+      - "mise.toml"
+      - ".github/workflows/frontend.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "web/**"
+      - "api/openapi.yaml"
+      - "api/.spectral.yaml"
+      - "scripts/validate-oas.sh"
+      - "scripts/gate.sh"
+      - "mise.toml"
+      - ".github/workflows/frontend.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  # The job id is the required-check context in the branch ruleset (#19).
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: jdx/mise-action@v4
+        with:
+          cache: true
+
+      - name: Install web dependencies
+        working-directory: web
+        run: bun install --frozen-lockfile
+
+      - name: Install Chromium
+        working-directory: web
+        run: bun node_modules/@playwright/test/cli.js install --with-deps chromium
+
+      # deps (no-op, warm), oas-lint, unit-cov, e2e.
+      - name: Run the frontend gate
+        run: scripts/gate.sh
+        env:
+          GATE_SKIP: fmt zig-test e2e-live perf
+          CI: "1"
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-gate
+          path: |
+            .gate/
+            web/playwright-report/
+            web/test-results/
+          if-no-files-found: ignore

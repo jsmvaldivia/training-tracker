@@ -59,6 +59,11 @@ zig fmt --check .      # formatting gate
 against a ReleaseSafe build on a scratch store: the CI `contract` job. Run it
 after any change to `openapi.yaml` or the handlers.
 
+`scripts/bench.sh` prints an API performance snapshot (needs `oha`);
+`scripts/perf-snapshot.sh` is the gate's `perf` step and fails on a >25 %
+regression against `perf-snapshots.jsonl` — commit its new line with your
+change. Never benchmark a Debug build.
+
 Gotcha: test binaries include imported module tests and share hardcoded `/tmp`
 data paths. Use `-j1` to serialize binaries within a build. Never run the same
 file's tests in two processes at once.

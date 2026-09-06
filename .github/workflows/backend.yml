@@ -1,0 +1,59 @@
+# Backend gate (issue #13): formatting and the full Zig suite on every push
+# and PR to main that touches the API. Runs scripts/gate.sh so CI and the
+# local gate cannot drift; the frontend-only steps are skipped here (they
+# have their own workflow) and recorded as skipped in .gate/result.json.
+name: backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "api/**"
+      - "scripts/gate.sh"
+      - "scripts/validate-oas.sh"
+      - "mise.toml"
+      - ".github/workflows/backend.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "api/**"
+      - "scripts/gate.sh"
+      - "scripts/validate-oas.sh"
+      - "mise.toml"
+      - ".github/workflows/backend.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  # The job id is the required-check context in the branch ruleset (#19).
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      # Zig (and Bun, for the Spectral lint) come from mise.toml — the one pin.
+      - uses: jdx/mise-action@v4
+        with:
+          cache: true
+
+      - name: Cache Zig build artifacts
+        uses: actions/cache@v6
+        with:
+          path: api/.zig-cache
+          key: zig-cache-${{ runner.os }}-${{ hashFiles('mise.toml', 'api/build.zig', 'api/build.zig.zon') }}
+
+      # deps (bun install, for Spectral), fmt, oas-lint, zig-test.
+      - name: Run the backend gate
+        run: scripts/gate.sh
+        env:
+          GATE_SKIP: unit-cov e2e e2e-live perf
+
+      - name: Upload gate output
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-gate
+          path: .gate/
+          if-no-files-found: ignore

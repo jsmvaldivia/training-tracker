@@ -1,0 +1,33 @@
+# No-op twin of backend.yml: same workflow name, same job id, complementary
+# path filter. A PR that does not touch the backend paths still gets a green
+# "backend" check, so the branch ruleset can require it without blocking
+# docs-only changes (GitHub's documented pattern for path-filtered required
+# checks). Keep the path lists identical to backend.yml.
+name: backend
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "api/**"
+      - "scripts/gate.sh"
+      - "scripts/validate-oas.sh"
+      - "mise.toml"
+      - ".github/workflows/backend.yml"
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "api/**"
+      - "scripts/gate.sh"
+      - "scripts/validate-oas.sh"
+      - "mise.toml"
+      - ".github/workflows/backend.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "no backend changes in this push; nothing to gate"

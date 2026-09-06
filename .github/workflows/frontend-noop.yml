@@ -1,0 +1,37 @@
+# No-op twin of frontend.yml: same workflow name, same job id, complementary
+# path filter. A PR that does not touch the frontend paths still gets a green
+# "frontend" check, so the branch ruleset can require it without blocking
+# docs-only changes (GitHub's documented pattern for path-filtered required
+# checks). Keep the path lists identical to frontend.yml.
+name: frontend
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "web/**"
+      - "api/openapi.yaml"
+      - "api/.spectral.yaml"
+      - "scripts/validate-oas.sh"
+      - "scripts/gate.sh"
+      - "mise.toml"
+      - ".github/workflows/frontend.yml"
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "web/**"
+      - "api/openapi.yaml"
+      - "api/.spectral.yaml"
+      - "scripts/validate-oas.sh"
+      - "scripts/gate.sh"
+      - "mise.toml"
+      - ".github/workflows/frontend.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "no frontend changes in this push; nothing to gate"

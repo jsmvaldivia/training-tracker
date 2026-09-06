@@ -94,6 +94,23 @@ call it). The backend URL is configurable with `BACKEND_URL`
 (default `http://127.0.0.1:8080`); the frontend port with `PORT` (default
 `3000`).
 
+## Performance snapshot
+
+`scripts/bench.sh` measures the Zig API on a ReleaseSafe build against a
+scratch copy of the seed: startup (best of three spawn-to-first-`/health` starts —
+the cold first start is reported but not compared — plus the server's own
+store-load time on its `listening on` line), read and write
+throughput with p50/p99 latency (`oha`, one connection per request because
+the server keeps none alive), RSS idle and after each load, and binary size.
+`scripts/perf-snapshot.sh` — the gate's `perf` step — compares a snapshot
+(startup, throughput, p50, idle RSS, binary size; p99 is recorded, not
+compared) with the median of the last five on the same platform in
+`perf-snapshots.jsonl`, fails on a regression above 25 %, and appends the
+passing snapshot; commit that line with the change that produced it.
+
+Reference sizes (darwin-arm64, Zig 0.16.0): ReleaseSafe 658 KB, ReleaseSmall
+273 KB — the latter is the candidate for the container image.
+
 ## Project layout
 
 ```
@@ -113,6 +130,23 @@ docs/glossary/        domain model and project knowledge
 
 Two only: **local** (development) and **prod** (when deployed). No staging, no
 separate test environment.
+
+## Container image
+
+Prod is one image (`docs/adr/0001-container-deployment.md`): the ReleaseSafe
+API on `localhost:8080` inside the container, the Bun server on the only
+exposed port `3000`, and the JSON store on the `/data` volume, seeded from
+`api/data.seed.json` on the first start.
+
+```bash
+docker build -t training-tracker .
+docker run --rm -p 3000:3000 -v "$(pwd)/data:/data" training-tracker
+```
+
+A `v*` tag builds and pushes `ghcr.io/jsmvaldivia/training-tracker:<version>`
+and `:latest` and attaches the linux/x86_64 binary and the web bundle to a
+GitHub Release (`.github/workflows/release.yml`), after the same gates the
+backend and frontend workflows run.
 
 ## Contributing notes
 
