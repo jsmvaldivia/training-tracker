@@ -411,3 +411,30 @@ test "DELETE /pursuits/{id}/milestones/{mid} with unknown ids returns 404" {
     defer testing.allocator.free(resp2.body);
     try testing.expectEqual(std.http.Status.not_found, resp2.status);
 }
+
+test "POST /pursuits/{id}/milestones on a full pursuit returns 409" {
+    const path = "/tmp/tt-http-ms-full.json";
+    var s = try freshStore(path);
+    defer s.deinit();
+    defer std.Io.Dir.cwd().deleteFile(testIo(), path) catch {};
+
+    const pid = try createPursuit(&s);
+    defer testing.allocator.free(pid);
+    const ms_path = try std.fmt.allocPrint(testing.allocator, "/pursuits/{s}/milestones", .{pid});
+    defer testing.allocator.free(ms_path);
+
+    for (0..store_mod.max_milestones) |_| {
+        const r = try req(&s, .POST, ms_path, "{\"name\":\"m\",\"date\":\"2026-07-15T00:00:00Z\"}");
+        defer testing.allocator.free(r.body);
+        try testing.expectEqual(std.http.Status.created, r.status);
+    }
+
+    const full = try req(&s, .POST, ms_path, "{\"name\":\"one too many\",\"date\":\"2026-07-15T00:00:00Z\"}");
+    defer testing.allocator.free(full.body);
+    try testing.expectEqual(std.http.Status.conflict, full.status);
+    const parsed = try json.parseFromSlice(Value, testing.allocator, full.body, .{});
+    defer parsed.deinit();
+    try testing.expectEqual(@as(i64, 409), parsed.value.object.get("status").?.integer);
+    try testing.expectEqualStrings("Milestone limit reached", parsed.value.object.get("message").?.string);
+    try testing.expectEqualStrings("Pursuit already has the maximum of 50 milestones", parsed.value.object.get("details").?.string);
+}

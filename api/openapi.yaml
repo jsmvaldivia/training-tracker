@@ -447,6 +447,16 @@ paths:
               example:
                 status: 404
                 message: Pursuit not found
+        "409":
+          description: The pursuit already holds the maximum of 50 milestones
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                status: 409
+                message: Milestone limit reached
+                details: "Pursuit already has the maximum of 50 milestones"
         "500":
           description: Failed to persist the created milestone
           content:

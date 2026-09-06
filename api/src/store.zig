@@ -29,6 +29,7 @@ pub const max_milestones = 50;
 /// HTTP status codes declared in the contract.
 pub const StoreError = error{
     Invalid, // -> 400
+    Conflict, // -> 409: a valid request the resource's current state forbids
     PursuitNotFound, // -> 404
     MilestoneNotFound, // -> 404
 };
@@ -345,8 +346,9 @@ pub const Store = struct {
 
         const arr = self.milestonesArray(pidx);
         if (arr.items.len >= max_milestones) {
+            // The body is valid; the pursuit is full. That is a 409, not a 400.
             d.set("Pursuit already has the maximum of {d} milestones", .{max_milestones});
-            return StoreError.Invalid;
+            return StoreError.Conflict;
         }
 
         var obj = ObjectMap{};
@@ -1031,4 +1033,20 @@ test "string limits count characters, not bytes" {
     , .{"é" ** 201});
     try testing.expectError(StoreError.Invalid, s.create(try parse(a, too_long)));
     try testing.expectEqualStrings("Field 'name' must be between 1 and 200 characters", s.diag.message().?);
+}
+
+test "createMilestone answers Conflict once the pursuit holds the maximum" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var s = try testStore(testing.allocator);
+    defer s.deinit();
+
+    const pid = try createPursuitId(&s, a, valid_pursuit);
+    for (0..max_milestones) |_| {
+        _ = try s.createMilestone(pid, try parse(a, "{\"name\":\"m\",\"date\":\"2026-07-15T00:00:00Z\"}"));
+    }
+    try testing.expectError(StoreError.Conflict, s.createMilestone(pid, try parse(a, "{\"name\":\"one too many\",\"date\":\"2026-07-15T00:00:00Z\"}")));
+    try testing.expectEqualStrings("Pursuit already has the maximum of 50 milestones", s.diag.message().?);
+    try testing.expectEqual(@as(usize, max_milestones), (try s.get(pid)).object.get("milestones").?.array.items.len);
 }

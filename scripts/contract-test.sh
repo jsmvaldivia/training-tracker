@@ -10,6 +10,8 @@ set -euo pipefail
 # curl, and uvx (uv); Schemathesis itself is fetched at run time, pinned below,
 # so the project gains no dependency.
 #
+#   scripts/contract-test.sh [schemathesis args...]   e.g. --seed 123 to replay a CI run
+#
 #   PORT           port for the scratch server (default 8085)
 #   SCHEMATHESIS   package spec for uvx (default schemathesis==4.25.2)
 #
@@ -55,4 +57,5 @@ curl -sf "http://127.0.0.1:$PORT/health" >/dev/null || { echo "error: API not re
 mkdir -p "$REPORT_DIR"
 uvx --from "$SCHEMATHESIS" schemathesis run api/openapi.yaml \
   --url "http://127.0.0.1:$PORT" \
-  --report junit --report-dir "$REPORT_DIR"
+  --report junit --report-dir "$REPORT_DIR" \
+  "$@"

@@ -345,6 +345,7 @@ fn mapStoreError(gpa: Allocator, s: *Store, err: StoreOrOom) Allocator.Error!Res
     log.debug("store rejected request: {s}", .{@errorName(err)});
     return switch (err) {
         error.Invalid => errorResponse(gpa, .bad_request, "Invalid request body", s.diag.message()),
+        error.Conflict => errorResponse(gpa, .conflict, "Milestone limit reached", s.diag.message()),
         error.PursuitNotFound => errorResponse(gpa, .not_found, "Pursuit not found", null),
         error.MilestoneNotFound => errorResponse(gpa, .not_found, "Milestone not found", null),
         error.OutOfMemory => oomRaw(gpa),
