@@ -416,6 +416,23 @@ pub const Store = struct {
         _ = self.milestonesArray(pidx).orderedRemove(midx);
     }
 
+    // ---- Read-side view --------------------------------------------------
+
+    /// The pursuit as the API reports it (issue #28): `status` replaced by
+    /// `derivedStatus` when the two differ. The copy is shallow and lives in
+    /// `scratch` (a request arena); the stored value is untouched, so a later
+    /// flush never persists a derived status.
+    pub fn present(self: *Store, scratch: Allocator, pursuit: Value) Allocator.Error!Value {
+        var buf: [32]u8 = undefined;
+        const now = time_util.nowIso8601(self.io, &buf);
+        const shown = derivedStatus(pursuit.object, now);
+        const stored = stringField(pursuit.object, "status") orelse "";
+        if (std.mem.eql(u8, shown, stored)) return pursuit;
+        var copy = try pursuit.object.clone(scratch);
+        try copy.put(scratch, "status", .{ .string = shown });
+        return .{ .object = copy };
+    }
+
     // ---- Helpers ---------------------------------------------------------
 
     fn stampNow(self: *Store) ![]const u8 {
@@ -484,6 +501,33 @@ pub const Store = struct {
 const pursuit_types = [_][]const u8{ "certification", "training" };
 const statuses = [_][]const u8{ "planned", "in_progress", "completed", "expired" };
 const milestone_states = [_][]const u8{ "pending", "achieved" };
+
+/// The status a pursuit reads as, given the clock (issue #28): a `completed`
+/// pursuit whose `expires_at` has passed is `expired`. Any other stored status
+/// stands — a pursuit never obtained cannot expire (it is overdue instead),
+/// and `expired` set by hand is kept. Derived on every read and never stored,
+/// so the file keeps the explicit lifecycle state and the rule can change
+/// without a data migration. `now` is an ISO 8601 UTC timestamp.
+pub fn derivedStatus(obj: ObjectMap, now: []const u8) []const u8 {
+    const status = stringField(obj, "status") orelse "planned";
+    if (!std.mem.eql(u8, status, "completed")) return status;
+    const expires_at = stringField(obj, "expires_at") orelse return status;
+    return if (hasPassed(expires_at, now)) "expired" else status;
+}
+
+/// True when `ts` is strictly before `now`. Both are validated ISO 8601 UTC
+/// timestamps, whose first 19 characters (`YYYY-MM-DDThh:mm:ss`) order
+/// lexicographically; fractional seconds are ignored, so the comparison is
+/// to the second.
+fn hasPassed(ts: []const u8, now: []const u8) bool {
+    if (ts.len < 19 or now.len < 19) return false;
+    return std.mem.order(u8, ts[0..19], now[0..19]) == .lt;
+}
+
+fn stringField(obj: ObjectMap, key: []const u8) ?[]const u8 {
+    const v = obj.get(key) orelse return null;
+    return if (v == .string) v.string else null;
+}
 
 /// True when `s` is a `PursuitType` enum value from the contract. Used by the
 /// handler to validate the `type` query filter with the same table the store
@@ -1062,4 +1106,58 @@ test "createMilestone answers Conflict once the pursuit holds the maximum" {
     try testing.expectError(StoreError.Conflict, s.createMilestone(pid, try parse(a, "{\"name\":\"one too many\",\"date\":\"2026-07-15T00:00:00Z\"}")));
     try testing.expectEqualStrings("Pursuit already has the maximum of 50 milestones", s.diag.message().?);
     try testing.expectEqual(@as(usize, max_milestones), (try s.get(pid)).object.get("milestones").?.array.items.len);
+}
+
+// ---- derivedStatus (issue #28) --------------------------------------------
+
+fn statusFixture(a: Allocator, status: []const u8, expires_at: ?[]const u8) !ObjectMap {
+    var obj = ObjectMap{};
+    try obj.put(a, "status", .{ .string = status });
+    if (expires_at) |e| try obj.put(a, "expires_at", .{ .string = e });
+    return obj;
+}
+
+test "derivedStatus: a completed pursuit past expires_at reads expired" {
+    const a = testing.allocator;
+    var obj = try statusFixture(a, "completed", "2026-01-01T00:00:00Z");
+    defer obj.deinit(a);
+    try testing.expectEqualStrings("expired", derivedStatus(obj, "2026-06-15T12:00:00Z"));
+}
+
+test "derivedStatus: a completed pursuit with expires_at ahead stays completed" {
+    const a = testing.allocator;
+    var obj = try statusFixture(a, "completed", "2029-12-15T00:00:00Z");
+    defer obj.deinit(a);
+    try testing.expectEqualStrings("completed", derivedStatus(obj, "2026-06-15T12:00:00Z"));
+}
+
+test "derivedStatus: the comparison is to the second, fractions ignored" {
+    const a = testing.allocator;
+    var same = try statusFixture(a, "completed", "2026-06-15T12:00:00.500Z");
+    defer same.deinit(a);
+    try testing.expectEqualStrings("completed", derivedStatus(same, "2026-06-15T12:00:00Z"));
+    var earlier = try statusFixture(a, "completed", "2026-06-15T11:59:59.999Z");
+    defer earlier.deinit(a);
+    try testing.expectEqualStrings("expired", derivedStatus(earlier, "2026-06-15T12:00:00Z"));
+}
+
+test "derivedStatus: without expires_at the stored status stands" {
+    const a = testing.allocator;
+    var obj = try statusFixture(a, "completed", null);
+    defer obj.deinit(a);
+    try testing.expectEqualStrings("completed", derivedStatus(obj, "2026-06-15T12:00:00Z"));
+}
+
+test "derivedStatus: only a completed pursuit can expire" {
+    const a = testing.allocator;
+    var obj = try statusFixture(a, "in_progress", "2026-01-01T00:00:00Z");
+    defer obj.deinit(a);
+    try testing.expectEqualStrings("in_progress", derivedStatus(obj, "2026-06-15T12:00:00Z"));
+}
+
+test "derivedStatus: expired set by hand stays expired" {
+    const a = testing.allocator;
+    var obj = try statusFixture(a, "expired", "2029-12-15T00:00:00Z");
+    defer obj.deinit(a);
+    try testing.expectEqualStrings("expired", derivedStatus(obj, "2026-06-15T12:00:00Z"));
 }

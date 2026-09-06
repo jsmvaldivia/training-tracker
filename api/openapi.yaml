@@ -639,7 +639,10 @@ components:
       enum: [planned, in_progress, completed, expired]
       description: >
         Pursuit lifecycle status. Transitions: planned → in_progress → completed.
-        Certifications may also transition to expired after their validity period.
+        A completed pursuit whose expires_at has passed is reported as expired:
+        the server derives it on every read (list, get, and the create and
+        update responses) and does not store it. Setting expired by hand is
+        still allowed.
 
     PursuitType:
       type: string
@@ -772,7 +775,8 @@ components:
           $ref: "#/components/schemas/Timestamp"
           description: >
             Expiration date for certifications (ISO 8601). Optional, typically
-            only set for type=certification.
+            only set for type=certification. Once it has passed, a completed
+            pursuit's status reads expired.
           example: "2029-12-15T00:00:00Z"
         tags:
           type: array
