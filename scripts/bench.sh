@@ -44,7 +44,7 @@ if lsof -i ":$PORT" -sTCP:LISTEN -n -P >/dev/null 2>&1; then
   exit 2
 fi
 
-scratch_dir="$(mktemp -d -t tt-bench)"
+scratch_dir="$(mktemp -d "${TMPDIR:-/tmp}/tt-bench.XXXXXX")"
 scratch="$scratch_dir/data.json"
 cp api/data.seed.json "$scratch"
 pid=""
