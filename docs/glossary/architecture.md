@@ -153,8 +153,9 @@ machine-readable result. Agents judge; this script executes.
   (tests share hardcoded `/tmp` data paths) or when port 3000 is held
   (Playwright must start its own server).
 - `GATE_SKIP="e2e perf"` skips named steps; they are recorded as skipped.
-- Consumed by [[evaluator]] (agent) and, later, by CI (#13, #14) so local and
-  CI gates cannot drift.
+- Consumed by [[evaluator]] (agent) and by the CI `backend` and `frontend`
+  workflows (#13, #14), which run it with the other stack's steps in
+  `GATE_SKIP`, so local and CI gates cannot drift.
 Source: jsmvaldivia, 2026-09-04 · verified
 
 ### coverage gate

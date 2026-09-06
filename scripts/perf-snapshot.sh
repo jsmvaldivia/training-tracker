@@ -9,7 +9,8 @@ set -euo pipefail
 #
 # Platform-scoped history: absolute numbers from a laptop and a CI runner are
 # not comparable, so each host kind builds up its own baseline. Until five
-# snapshots exist for a platform, the check only reports.
+# snapshots exist for a platform, the median is taken over the ones there
+# are; with none, the check only reports.
 #
 #   PERF_THRESHOLD   percent, default 25 — tighten once the noise floor is known
 #   BENCH_REQUESTS   passed through to bench.sh
