@@ -34,7 +34,9 @@ ENV NODE_ENV=production \
     PORT=3000
 WORKDIR /app
 COPY web/package.json web/bun.lock ./web/
-RUN cd web && bun install --frozen-lockfile --production
+# --omit=peer: bun-plugin-tailwind peer-depends on the `bun` npm package, 172 MB
+# of runtime binaries this image already has; the plugin imports the built-in.
+RUN cd web && bun install --frozen-lockfile --production --omit=peer
 COPY web/server.ts web/index.html web/bunfig.toml web/tsconfig.json ./web/
 COPY web/src ./web/src
 COPY api/data.seed.json ./api/data.seed.json
