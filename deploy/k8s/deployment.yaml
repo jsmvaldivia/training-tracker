@@ -1,0 +1,62 @@
+# One Pod from the release image: the entrypoint runs the Zig API on
+# localhost:8080 and the Bun server on 3000, which proxies /api/* to it
+# (scripts/container-entrypoint.sh). Kubernetes ignores the Dockerfile
+# HEALTHCHECK, so the probes repeat it here.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: training-tracker
+  labels:
+    app: training-tracker
+spec:
+  replicas: 1
+  # The store is one JSON file with one writer. A rolling update would run the
+  # old and the new Pod against it at the same time; Recreate stops the old
+  # Pod first. Seconds of downtime, one user.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: training-tracker
+  template:
+    metadata:
+      labels:
+        app: training-tracker
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: app
+          # The tag comes from kustomization.yaml (scripts/deploy.sh sets it).
+          image: ghcr.io/jsmvaldivia/training-tracker:latest
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: PORT
+              value: "3000"
+            - name: DATA_PATH
+              value: /data/data.json
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: training-tracker-data

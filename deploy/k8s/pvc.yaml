@@ -1,0 +1,14 @@
+# The JSON store. `local-path` (the k3s default) binds the claim to one node,
+# which pins the Pod to that Pi and its disk; backup is a manual copy of
+# /data/data.json (ADR 0001, consequences). Longhorn or NFS would change only
+# storageClassName.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: training-tracker-data
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi

@@ -148,6 +148,33 @@ and `:latest` and attaches the linux/x86_64 binary and the web bundle to a
 GitHub Release (`.github/workflows/release.yml`), after the same gates the
 backend and frontend workflows run.
 
+## Deploy
+
+Prod is the home k3s cluster (`docs/adr/0001-container-deployment.md`): one
+Pod from the release image, the store on a `local-path` volume, a NodePort on
+30300, LAN only. `deploy/k8s` holds the manifests; `scripts/deploy.sh` applies
+them with the image tag of a release (needs `kubectl`, `curl`, `jq`):
+
+```bash
+scripts/deploy.sh v0.1.0
+```
+
+It runs from a machine whose kubeconfig reaches the cluster (`KUBE_CONTEXT`
+picks a context). It reads the pursuit count, applies the manifests with the
+tag set in a throwaway overlay, waits for the rollout, and fails unless
+`GET /api/health` returns 200 and the count is unchanged. The checks target
+`PROD_URL`, by default the first node's IP on the NodePort.
+
+First deploy: the GHCR package must be public (`release.yml` header), the
+store starts from `api/data.seed.json`, and the volume pins the Pod to the
+node that holds it. To start from your live data instead, with nobody using
+the app, copy it into the volume and restart:
+
+```bash
+kubectl -n training-tracker cp api/data.json "$(kubectl -n training-tracker get pod -l app=training-tracker -o jsonpath='{.items[0].metadata.name}'):/data/data.json"
+kubectl -n training-tracker rollout restart deployment/training-tracker
+```
+
 ## Contributing notes
 
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/)

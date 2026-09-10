@@ -1,0 +1,17 @@
+# Reachable on every node of the cluster at :30300, plain HTTP. The LAN is
+# the trust boundary (ADR 0001); the app has no authentication.
+apiVersion: v1
+kind: Service
+metadata:
+  name: training-tracker
+  labels:
+    app: training-tracker
+spec:
+  type: NodePort
+  selector:
+    app: training-tracker
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+      nodePort: 30300
