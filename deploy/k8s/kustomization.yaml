@@ -1,0 +1,14 @@
+# Prod on the home k3s cluster (issue #18, docs/adr/0001-container-deployment.md).
+# `kubectl apply -k deploy/k8s` deploys `latest`; scripts/deploy.sh sets the
+# release tag in a throwaway overlay instead of editing this file.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: training-tracker
+resources:
+  - namespace.yaml
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml
+images:
+  - name: ghcr.io/jsmvaldivia/training-tracker
+    newTag: latest
