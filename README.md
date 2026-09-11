@@ -16,17 +16,17 @@ no infrastructure the app doesn't need.
 - **Contract** — `api/openapi.yaml` is the source of truth. The backend owns it;
   the frontend's typed client in `web/src/api.ts` is maintained by hand.
 
-## MVP scope
+## Scope
 
-The first entities to ship:
-
-- **Pursuit** — name, type (`training` | `certification`), target date, status,
-  started/completed timestamps.
+- **Pursuit** — name, type (`training` | `certification`), target date,
+  status, started/completed/expires timestamps, tags.
 - **Milestone** — name, date, `pending` | `achieved`; belongs to one pursuit.
-- **Status** — explicit lifecycle: `planned → in_progress → completed`.
+- **Status** — explicit lifecycle `planned → in_progress → completed`, plus
+  `expired`, derived from `expires_at` on read.
+- Dashboard with time and achievement gauges, and a timeline view.
 
-Deferred until later: cross-pursuit plans, tags, resources, renewals, progress
-gauges, and the timeline view. See `docs/glossary/` for the full domain model.
+Deferred: cross-pursuit plans, resources, and renewals (issues #26, #25,
+#27). `docs/glossary/` holds the full domain model.
 
 ## Requirements
 
@@ -47,17 +47,14 @@ mise exec -- ./scripts/verify.sh
 mise exec -- ./scripts/dev.sh
 ```
 
-Setup installs locked dependencies and Chromium; verification runs all gates
-and needs port 3000 free. Both commands work for Codex and Claude Code without
-shell activation. Neither touches your live data. See [setup and migration](docs/setup.md)
-for Linux system dependencies, troubleshooting, personal agent settings, and
-backing up and restoring training data.
+Setup installs locked dependencies and Chromium; verification runs every gate
+and needs port 3000 free. Linux prerequisites, troubleshooting, and moving
+live data between machines: [docs/setup.md](docs/setup.md).
 
 ## Build & run
 
-The dev command above starts both processes, seeds the store on first run, and
-stops both on interruption or when either exits. For individual processes, use
-the commands below with the pinned tools on PATH (`mise exec -- <command>`).
+The dev command starts both processes. For one at a time, with the pinned
+tools on PATH (`mise exec -- <command>`):
 
 ### Backend
 
@@ -97,19 +94,11 @@ call it). The backend URL is configurable with `BACKEND_URL`
 ## Performance snapshot
 
 `scripts/bench.sh` measures the Zig API on a ReleaseSafe build against a
-scratch copy of the seed: startup (best of three spawn-to-first-`/health` starts —
-the cold first start is reported but not compared — plus the server's own
-store-load time on its `listening on` line), read and write
-throughput with p50/p99 latency (`oha`, one connection per request because
-the server keeps none alive), RSS idle and after each load, and binary size.
-`scripts/perf-snapshot.sh` — the gate's `perf` step — compares a snapshot
-(startup, throughput, p50, idle RSS, binary size; p99 is recorded, not
-compared) with the median of the last five on the same platform in
+scratch copy of the seed (needs `oha`). `scripts/perf-snapshot.sh`, the gate's
+`perf` step, compares a snapshot with the last five on the same platform in
 `perf-snapshots.jsonl`, fails on a regression above 25 %, and appends the
-passing snapshot; commit that line with the change that produced it.
-
-Reference sizes (darwin-arm64, Zig 0.16.0): ReleaseSafe 658 KB, ReleaseSmall
-273 KB — the latter is the candidate for the container image.
+passing line; commit that line with the change that produced it. Each script's
+header says exactly what it measures and compares.
 
 ## Project layout
 
@@ -125,11 +114,6 @@ web/                  Bun + React frontend
   src/                React components
 docs/glossary/        domain model and project knowledge
 ```
-
-## Environments
-
-Two only: **local** (development) and **prod** (when deployed). No staging, no
-separate test environment.
 
 ## Container image
 
@@ -174,10 +158,3 @@ the app, copy it into the volume and restart:
 kubectl -n training-tracker cp api/data.json "$(kubectl -n training-tracker get pod -l app=training-tracker -o jsonpath='{.items[0].metadata.name}'):/data/data.json"
 kubectl -n training-tracker rollout restart deployment/training-tracker
 ```
-
-## Contributing notes
-
-- Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/)
-  (`feat:`, `fix:`, `chore:`, `refactor:`, …).
-- `api/openapi.yaml` is the contract: design or change it first, then implement
-  against it.

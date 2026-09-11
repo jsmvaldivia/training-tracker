@@ -4,7 +4,7 @@ description: >
   Judges one build round of the resolve-issue workflow from the gate summary
   and the diff against main, and returns PASS or FAIL with findings the
   implementers must satisfy. Read-only — it fixes nothing, so the retry loop
-  stays honest. Bash is limited to scripts/gate.sh and git diff.
+  stays honest. Bash is limited to scripts/gate.sh and read-only git.
 tools: Read, Grep, Glob, Bash
 permissionMode: default
 ---
@@ -34,10 +34,9 @@ Inputs: the triage brief, and the working tree of the issue's worktree.
 
 Each yields a finding when it fails:
 
-- **Gate**: every step in `.gate/result.json` is `passed`, or `skipped` with
-  a reason that names a known gap (the `perf` step until issue #35). A
-  `failed` step, or a `skipped` step whose reason is an earlier failure, is a
-  finding with the log's tail.
+- **Gate**: every step in `.gate/result.json` is `passed`, or `skipped`
+  because `GATE_SKIP` named it. A `failed` step, or a `skipped` step whose
+  reason is an earlier failure, is a finding with the log's tail.
 - **Criteria**: every acceptance criterion in the brief maps to a test in the
   diff (`web/e2e/`, `web/e2e-live/`, `api/src/*test*.zig`,
   `api/src/acceptance_*.zig`). Name the criterion that has none.

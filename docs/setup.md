@@ -1,8 +1,7 @@
 # Setup and machine migration
 
-The repository carries project instructions, Claude's shared-instruction import
-and agents, locked JavaScript dependencies, and a pinned Zig/Bun toolchain.
-Personal agent preferences and live training data are separate.
+How to set up a new machine, and how to move live training data between
+machines. Personal agent preferences and live data are not in the repository.
 
 ## Prepare a machine
 
@@ -35,20 +34,9 @@ request administrator privileges; setup does not run it automatically:
 mise exec -- bun web/node_modules/@playwright/test/cli.js install-deps chromium
 ```
 
-Then run:
-
-```bash
-mise exec -- ./scripts/verify.sh
-mise exec -- ./scripts/dev.sh
-```
-
-Verification checks tools, OpenAPI, Zig formatting, the full backend suite,
-frontend unit tests, and Chromium E2E tests in order, stopping on failure.
-Port 3000 must be free: E2E starts its own frontend with mocked API responses.
-Stop the dev server before verification. Serialize Zig tests across agents and
-worktrees on the same machine because they share temporary paths. Verification
-uses `zig build test -j1` because imported module tests also share those paths
-between binaries within a single build.
+Then `mise exec -- ./scripts/verify.sh` and `mise exec -- ./scripts/dev.sh`.
+What they run, the ports they need, and the serial-test rule are in
+`AGENTS.md`, "Setup and verification".
 
 When changing setup or supervision scripts, run their socket-free regression
 checks with `mise exec -- bun scripts/test-tooling.mjs`. They exercise temporary
@@ -56,17 +44,11 @@ fixtures under `/bin/bash`; `TEST_BASH` can select another Bash installation.
 The application, validator, and Playwright commands use Bun explicitly and do
 not require a separate Node installation.
 
-Dev starts the API and frontend and shuts down both process groups when either
-exits, on Ctrl-C, or on termination. API data is seeded only when the live file
-does not exist. Setup and verification do not initialize or modify live data.
-
 ## Agent setup checklist
 
 - Install Codex and/or Claude Code separately and sign in again on the new host.
-- The repository's `AGENTS.md` contains shared guidance; `CLAUDE.md` imports it.
-  Both agents use the same setup and verification commands. Claude's remote
-  session hook invokes setup only when `CLAUDE_CODE_REMOTE=true`; pinned tools
-  must be available on PATH before launching the agent. Local hooks do not install.
+  `AGENTS.md` is the shared guidance and `CLAUDE.md` imports it; the Claude
+  `SessionStart` hook is described there.
 - Review and transfer selected global instructions from `~/.codex/AGENTS.md`
   and `~/.claude/CLAUDE.md`, plus relevant non-secret settings from their config
   files. Do not copy whole application state directories or credentials.
@@ -99,9 +81,8 @@ your pursuits and milestones are present. Tests must never use the live file.
   A globally installed Bun or one in `node_modules/.bin` can otherwise shadow
   the desired version. The tool check reports the actual and required versions.
 - **mise crashes:** update or repair mise using its official installation
-  instructions. An older local installation crashed during readiness checks;
-  project scripts do not repair global tools. Alternatively, install the exact
-  versions from `mise.toml` yourself and put them on PATH.
+  instructions, or install the exact versions from `mise.toml` yourself and
+  put them on PATH. Project scripts do not repair global tools.
 - **Frozen lockfile error:** do not regenerate the lockfile during setup.
   Check that the manifest and lockfile come from the same checkout and that
   the pinned Bun is in use.

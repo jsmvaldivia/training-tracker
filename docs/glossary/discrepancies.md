@@ -30,13 +30,7 @@ it · date.
   `endPct`, `isOverdue`).
 - Flagged by: claude-md-audit · 2026-09-03
 
-### Tag · stored but not filterable
-- Expected: a [[tag]] is "a filtering axis".
-- Actual: the API accepts and persists `tags` (max 20) and the cards render
-  them, but the only filter in the UI is pursuit `type`. Tag filtering is
-  listed as deferred in README, so this is a scope gap rather than a bug.
-- Anchor: `api/src/store.zig` (`max_tags`), `web/src/App.tsx` (`filterType`).
-- Flagged by: claude-md-audit · 2026-09-03
-
 Not discrepancies (simply unimplemented, per README "deferred"): `leads_to`,
-[[plan]], [[resource]], [[renewal]] — tracked by issues #27, #26, #25.
+[[plan]], [[resource]], [[renewal]] — tracked by issues #27, #26, #25. Also
+unimplemented, no issue yet: filtering by [[tag]] (the API stores `tags` and
+the cards render them; the only UI filter is pursuit `type`).

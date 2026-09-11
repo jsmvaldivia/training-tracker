@@ -106,11 +106,35 @@ bun test:e2e:live  # full stack: real API on a scratch store (scripts/e2e-live.s
 
 `./scripts/dev.sh` starts both servers and stops both on Ctrl-C.
 
+## Workflow agents
+
+`.claude/agents/` holds six subagents. `/resolve-issue N`
+(`.claude/skills/resolve-issue/SKILL.md`, then
+`.claude/workflows/build-issue.js`) chains them: `issue-triager` (read-only
+brief with one verdict), `oas-designer` (edits the spec with the user),
+`test-author` (red outer tests), `resource-implementer` (one backend resource,
+TDD), `web-implementer` (the frontend half), `evaluator` (runs the gate,
+returns PASS or FAIL). Each agent file carries only its own role. These rules
+apply to all of them and are not repeated there:
+
+- No commits, pushes, or PRs; the main session ships.
+- `api/openapi.yaml` is read-only after triage. A change goes through
+  `oas-designer` with the user, then triage runs again.
+- No `.skip`, `.only`, disabled, weakened, or deleted tests to go green. A
+  test believed wrong is reported with the line and the reason.
+- `api/data.json` is never read or written by tests or agents.
+- Test runs are serial (the Backend gotcha above). `build-issue.js` runs the
+  implementers one after another, and `web-implementer` never runs beside
+  `resource-implementer`: Playwright holds 3000 and 3100.
+- The global `pre-push-checker` agent is for other stacks; `evaluator`
+  replaces it here.
+- Agent files load at session start; restart the session after editing one.
+
 ## Commits
 
 - Conventional Commits (`feat:`, `fix:`, `chore:`, `refactor:`, `docs:`, `test:`).
 - Never add `Co-Authored-By` or any Claude/Anthropic attribution line.
-- Run `zig build test -j1`, `bun test:e2e`, and `bun test:e2e:live` before
-  committing changes in their area. The live run is the gate for anything
-  that touches `openapi.yaml`, `web/src/api.ts`, or `web/server.ts`.
-  `scripts/gate.sh` runs all of them in order.
+- `scripts/gate.sh` runs every check in order and is the gate before a
+  commit; `GATE_SKIP="e2e perf"` names steps to skip. The live suite is
+  mandatory for anything that touches `openapi.yaml`, `web/src/api.ts`, or
+  `web/server.ts`.

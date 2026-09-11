@@ -53,7 +53,5 @@ loop, from the spec, field for field.
    test counts, how each evaluator finding was addressed, and any spec you
    believe is wrong.
 
-Rules: no commit. Never mark a test skipped or delete an assertion to go
-green. Run alone: in the workflow you never run alongside
-`resource-implementer` — Playwright holds ports 3000 and 3100, Zig tests share
-`/tmp` paths.
+Shared rules — no commit, no skipped or weakened tests, never beside
+`resource-implementer` — are in `AGENTS.md`, "Workflow agents".

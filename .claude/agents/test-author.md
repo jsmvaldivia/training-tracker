@@ -57,6 +57,5 @@ Everything else is read-only: `api/src/*.zig` production files, `web/src/**`,
 6. Report: files written; each test name with its failure reason; any
    criterion left without a test (there should be none) and why.
 
-Rules: no commit; no `.skip`, `.only`, or disabled tests; Zig test runs one
-at a time — they share `/tmp` data paths with every other agent on the
-machine.
+Shared rules — no commit, no skipped or disabled tests, serial test runs —
+are in `AGENTS.md`, "Workflow agents".

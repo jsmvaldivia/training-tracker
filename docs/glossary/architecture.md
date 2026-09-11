@@ -1,89 +1,52 @@
 # Architecture
 
-Components, agents, and key decisions for Training Tracker.
+Components, agents, and key decisions for Training Tracker. Each agent's
+behaviour is specified in its own file under `.claude/agents/`; the entries
+here record what it is for, what it depends on, and the decisions behind it.
+The rules every agent shares are in `AGENTS.md`, "Workflow agents".
 
 ### resource-implementer (agent)
-A Claude subagent that implements one backend resource as a **full vertical
-slice** — HTTP handler → request/response (de)serialization → domain
-validation → JSON-file persistence — using TDD, after [[oas-designer]] has
+Implements one backend resource as a full vertical slice — HTTP handler →
+validation → JSON-file persistence — test-first, after [[oas-designer]] has
 finalized the contract.
 - Code anchor: `.claude/agents/resource-implementer.md`
-- Scope: one resource per instance. Top boundary = HTTP handler wired to the
-  OAS path; bottom boundary = JSON-file repository against `api/data.json`.
-  Does **not** touch `web/` frontend, SQLite, or auth.
-- Handoff: invoked with a **named resource** (e.g. "implement Pursuit"). Cold
-  start — grounds itself by reading `api/openapi.yaml` for that resource's
-  paths + schemas, treating the spec as source of truth. If the resource is
-  absent from the spec, it stops and reports.
-- Fan-out: the **parent/orchestrator** spawns one instance per resource
-  (parallel-safe — each writes different files). The agent itself does not
-  spawn children, so it does not need the Agent tool.
-- TDD shape: acceptance test up front (failing, defines "done"), then
-  inside-out unit TDD per layer (persistence → domain → handler); the
-  acceptance test going green = slice complete.
-- Definition of done (machine-checkable gate): acceptance test green +
-  `zig build test` all pass + `zig fmt` clean + zero skipped/disabled tests.
-- Git: does **not** commit — leaves a clean working tree for human review
-  (avoids parallel agents racing on git). Reports files changed + test summary.
-- Spec authority: `api/openapi.yaml` is **immutable** to this agent. On a spec
-  gap/contradiction it halts the slice and reports the precise gap so
-  [[oas-designer]] (single owner) fixes the contract first.
-- Tools: `Read, Write, Edit, Bash, Glob, Grep`. Model: `opus`.
-- Depends on / used by: consumes the output of [[oas-designer]]; implements
-  [[pursuit]], [[milestone]], [[status]] (MVP resources).
-- Key decision: kept autonomous and single-resource (vs. interactive like
-  oas-designer) precisely so the orchestrator can fan out parallel cold
-  subagents, one per resource.
+- Depends on / used by: consumes `api/openapi.yaml` from [[oas-designer]];
+  implements [[pursuit]], [[milestone]], [[status]]; run by [[resolve-issue]].
+- Key decision: autonomous and single-resource (unlike the interactive
+  oas-designer) so a caller can spawn one cold instance per resource.
 Source: jsmvaldivia, 2026-06-17 · asserted
 
 ### oas-designer (agent)
-Interactive agent that designs the OpenAPI spec one resource at a time, lints
-with Spectral, and explicitly writes **no implementation code** — the seam that
-[[resource-implementer]] fills.
+Interactive agent that designs the OpenAPI spec one resource at a time with
+the user, lints with Spectral, and writes no implementation code — the seam
+that [[resource-implementer]] fills.
 - Code anchor: `.claude/agents/oas-designer.md`
-- Depends on / used by: produces `api/openapi.yaml`, consumed by
-  [[resource-implementer]].
+- Depends on / used by: produces `api/openapi.yaml`; the only writer of the
+  spec inside [[resolve-issue]].
 Source: `.claude/agents/oas-designer.md` · verified
 
 ### issue-triager (agent)
-Read-only first step of the issue-resolution workflow: reads one issue, the
-glossary (including [discrepancies](discrepancies.md)), the spec, and the code
-it names, and returns a brief with fixed sections and one verdict.
+Read-only first step of [[resolve-issue]]: reads one issue, the glossary
+(including [discrepancies](discrepancies.md)), the spec, and the code it
+names, and returns a brief with one verdict — `READY`, `SPEC_CHANGE`, or
+`NEEDS_CONTEXT`. Implementers treat the brief's seams and acceptance
+criteria as pre-approved.
 - Code anchor: `.claude/agents/issue-triager.md`
-- Verdicts: `READY` (spec and glossary cover it — code-vs-spec divergences
-  included), `SPEC_CHANGE` (names the resource and the missing operation,
-  field, or status code), `NEEDS_CONTEXT` (typed gaps: domain, architecture,
-  spec; a question in the issue is always a gap).
-- Brief sections: issue, goal, glossary terms, layers (with backend resource
-  names), seams (test files), acceptance criteria, verdict detail. Implementers
-  treat the seams and criteria as pre-approved.
-- Tools: Read, Grep, Glob, Bash for `gh`/`git` reads. Writes nothing.
-- Used by: [[resolve-issue]] (skill).
 Source: jsmvaldivia, 2026-09-05 · verified
 
 ### test-author (agent)
-Writes the failing outer tests for a brief — Playwright specs from the
-acceptance criteria, Zig HTTP/acceptance tests from the spec — and proves
-each is red for the feature's reason. Unit tests belong to the implementers.
+Writes the failing outer tests for a brief — Playwright specs and Zig
+HTTP/acceptance tests — and proves each is red for the feature's reason.
+Unit tests belong to the implementers.
 - Code anchor: `.claude/agents/test-author.md`
-- May write: `web/e2e/*.spec.ts`, `web/e2e/support/*`, `web/e2e-live/*.spec.ts`,
-  `api/src/http_test*.zig`, `api/src/acceptance_*.zig`, the test lists in
-  `api/build.zig`. Never production code, never `api/openapi.yaml`.
-- Stops and reports: a test that passes before implementation, a criterion
-  it cannot test.
 - Used by: `.claude/workflows/build-issue.js`, phase Tests.
 Source: jsmvaldivia, 2026-09-05 · verified
 
 ### web-implementer (agent)
 Frontend counterpart of [[resource-implementer]]: makes the failing e2e specs
-pass in `web/src/**` with a unit-test-first loop, keeps `web/src/api.ts` a
-hand-written mirror of the spec, and addresses evaluator findings on a retry.
+pass in `web/src/**` with a unit-test-first loop and keeps `web/src/api.ts` a
+hand-written mirror of the spec.
 - Code anchor: `.claude/agents/web-implementer.md`
-- Reads only: `web/e2e/**`, `web/e2e-live/**`, `api/**`, `api/openapi.yaml`.
-  A spec it believes wrong is reported, not edited.
-- Gates: `bun test:unit` (coverage threshold), `bun test:e2e`, and
-  `bun test:e2e:live` when the flow crosses the API. Never in parallel with
-  resource-implementer (ports 3000/3100, shared `/tmp` Zig paths).
 Source: jsmvaldivia, 2026-09-05 · verified
 
 ### evaluator (agent)
@@ -91,31 +54,32 @@ Last step before the PR: runs [[gate.sh]], reads `.gate/result.json` and the
 diff against `main`, and returns `PASS` or `FAIL` with findings. Fixes
 nothing, so a retry round reflects what the implementers actually did.
 - Code anchor: `.claude/agents/evaluator.md`
-- Rules: every gate step passed or skipped for a known reason; every
-  acceptance criterion maps to a test; every changed production file has a
-  test that exercises it ([[coverage gate]]); `api.ts` mirrors a changed
-  spec; no test skipped, disabled, or weakened; no spec edit after triage;
-  `api/data.json` untouched.
-- Finding shape: file, line, what is wrong, what a fix must satisfy.
-- Tools: Read, Grep, Glob, Bash for `scripts/gate.sh` and `git diff` only.
+- Enforces the [[coverage gate]].
 Source: jsmvaldivia, 2026-09-05 · verified
 
 ### resolve-issue (skill + workflow)
-Entry point of the issue-resolution workflow: `/resolve-issue N`.
-- Code anchors: `.claude/skills/resolve-issue/SKILL.md` (interactive half),
-  `.claude/workflows/build-issue.js` (autonomous half, workflow `build-issue`).
-- Interactive half, main session: board card to In Progress and
-  `needs-triage` removed; [[issue-triager]]; `NEEDS_CONTEXT` → `grill-me` →
-  re-triage; `SPEC_CHANGE` → `grill-me` if a term is missing → [[oas-designer]]
-  → `scripts/validate-oas.sh` → re-triage (spec frozen after lint); `READY`
-  → worktree → Workflow.
-- Autonomous half, Workflow script with `args { issue, brief, resources, web }`:
-  [[test-author]]; then per backend resource [[resource-implementer]], then
-  [[web-implementer]], strictly in series; then [[evaluator]]. `FAIL` feeds
-  the findings back and repeats the implement/evaluate pair, at most three
-  rounds. Returns `{ verdict, rounds, findings }`.
-- Back in the main session: Conventional Commit, push, `gh pr create` with
-  `Closes #N` in the body.
+Entry point of the issue-resolution workflow: `/resolve-issue N` turns an
+issue into a PR with as little human time as possible. A read-only triager
+decides whether a human is needed; humans handle the glossary and the
+contract; agents handle tests, code, gates, and the verdict.
+- Code anchors: `.claude/skills/resolve-issue/SKILL.md` (interactive half:
+  board, triage, grilling, spec design, commit, PR) and
+  `.claude/workflows/build-issue.js` (autonomous half: tests, implementers
+  in series, gate, evaluator, at most three rounds).
+- Design decisions (planned 2026-09-05 as issues #35–#45, all shipped):
+
+| # | Area | Decision | Why |
+|---|------|----------|-----|
+| 1 | Split | Interactive half in the main session (`resolve-issue` skill), autonomous half as a Workflow script (`build-issue`) | Subagents cannot talk to the user. Grilling and spec design need the user; everything after a READY verdict does not. |
+| 2 | Test order | Test-author writes outer acceptance tests only; implementers write unit tests inside red-green | Matches the outside-in loop `resource-implementer` already uses and avoids the horizontal-slice anti-pattern in the `tdd` skill. |
+| 3 | Seams | The triage brief lists the seams; implementers treat them as pre-approved | The `tdd` skill requires user confirmation of seams. In an autonomous run the brief is that confirmation. |
+| 4 | Spec | Read-only for every agent after triage; changes happen only via `oas-designer` in the interactive half, then re-triage | AGENTS.md: change the spec first, then implement. One entry point into the workflow. |
+| 5 | Checks | Deterministic checks live in `scripts/gate.sh`, which writes JSON; the evaluator reads it | Agents judge, scripts execute. The same script backs CI so gates cannot drift. |
+| 6 | Evaluator | Read-only, returns PASS or FAIL with findings; retry capped at three rounds | An evaluator that fixes things hides failures. A cap stops runaway loops. |
+| 7 | Coverage | Bun line-coverage threshold for `web/src`; diff rule for `api/src` now, kcov on Linux CI later | Zig has no coverage tool and kcov does not work well on macOS. |
+| 8 | Board | In Progress via `gh project item-edit` in the skill; Done via the built-in "item closed" project workflow plus `Closes #N` | Zero agent code for the merge side. |
+| 9 | Concurrency | Backend and frontend implementers run in series; one worktree per issue | Zig tests share hardcoded `/tmp` data paths; Playwright takes port 3000. |
+
 Source: jsmvaldivia, 2026-09-05 · verified
 
 ### Project board
@@ -136,26 +100,15 @@ Source: jsmvaldivia, 2026-09-05 · asserted (the built-in workflow toggle is set
 ### gate.sh (script)
 The local gate: every deterministic check, in order, in one process, with a
 machine-readable result. Agents judge; this script executes.
-- Code anchor: `scripts/gate.sh`
-- Steps, stop at first failure: `deps` (`bun install --frozen-lockfile`,
-  worktrees start without `node_modules`), `fmt` (`zig fmt --check`), `oas-lint`
-  (`scripts/validate-oas.sh`), `zig-test` (`zig build test`), `unit-cov`
-  (`bun test src` with the coverage threshold), `e2e` (`bun test:e2e`),
-  `e2e-live` (`scripts/e2e-live.sh`: real API on a scratch store, no mocks —
-  issue #12), `perf` (`scripts/perf-snapshot.sh`: bench on a ReleaseSafe build,
-  fail on a >25 % regression against the last five same-platform snapshots in
-  `perf-snapshots.jsonl` — issue #35).
+- Code anchor: `scripts/gate.sh` (its header lists the steps).
 - Output: `.gate/result.json` (gitignored) — `overall`, commit, branch, and one
   entry per step with `status` (`passed` | `failed` | `skipped`), exit code,
   duration, reason, and the output tail. A step that did not run is `skipped`,
   never `passed`. Per-step logs sit next to it.
-- Preconditions: refuses to start when another `zig build test` is running
-  (tests share hardcoded `/tmp` data paths) or when port 3000 is held
-  (Playwright must start its own server).
 - `GATE_SKIP="e2e perf"` skips named steps; they are recorded as skipped.
-- Consumed by [[evaluator]] (agent) and by the CI `backend` and `frontend`
-  workflows (#13, #14), which run it with the other stack's steps in
-  `GATE_SKIP`, so local and CI gates cannot drift.
+- Consumed by [[evaluator]] and by the CI `backend` and `frontend` workflows,
+  which run it with the other stack's steps in `GATE_SKIP`, so local and CI
+  gates cannot drift.
 Source: jsmvaldivia, 2026-09-04 · verified
 
 ### coverage gate

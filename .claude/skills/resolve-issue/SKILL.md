@@ -6,10 +6,10 @@ disable-model-invocation: true
 
 # resolve-issue
 
-Interactive half of the issue-resolution workflow (plan:
-`docs/plans/issue-resolution-workflow.md`). You run the steps that need a
-human — triage verdicts, glossary and spec decisions, the board, the PR — and
-hand the READY brief to the autonomous script in
+Interactive half of the issue-resolution workflow (design record:
+`docs/glossary/architecture.md`, "resolve-issue"). You run the steps that
+need a human — triage verdicts, glossary and spec decisions, the board, the
+PR — and hand the READY brief to the autonomous script in
 `.claude/workflows/build-issue.js`.
 
 Argument: the issue number `N`.
