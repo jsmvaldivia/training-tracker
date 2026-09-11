@@ -13,8 +13,11 @@ on:
       - "api/.spectral.yaml"
       - "scripts/validate-oas.sh"
       - "scripts/gate.sh"
+      - "scripts/lib.sh"
+      - "scripts/check-tools.sh"
       - "mise.toml"
       - ".github/workflows/frontend.yml"
+      - ".github/actions/setup/**"
   pull_request:
     branches: [main]
     paths:
@@ -23,8 +26,11 @@ on:
       - "api/.spectral.yaml"
       - "scripts/validate-oas.sh"
       - "scripts/gate.sh"
+      - "scripts/lib.sh"
+      - "scripts/check-tools.sh"
       - "mise.toml"
       - ".github/workflows/frontend.yml"
+      - ".github/actions/setup/**"
 
 permissions:
   contents: read
@@ -36,20 +42,11 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-
-      - uses: jdx/mise-action@v4
+      - uses: ./.github/actions/setup
         with:
-          cache: true
+          web: "true"
+          zig-cache: "false"
 
-      - name: Install web dependencies
-        working-directory: web
-        run: bun install --frozen-lockfile
-
-      - name: Install Chromium
-        working-directory: web
-        run: bun node_modules/@playwright/test/cli.js install --with-deps chromium
-
-      # deps (no-op, warm), oas-lint, unit-cov, e2e.
       - name: Run the frontend gate
         run: scripts/gate.sh
         env:

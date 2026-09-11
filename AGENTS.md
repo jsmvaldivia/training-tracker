@@ -12,15 +12,18 @@ smallest dependency set that works, no infrastructure the app doesn't need.
 mise trust
 mise install
 mise exec -- ./scripts/setup.sh
-mise exec -- ./scripts/verify.sh
+mise exec -- ./scripts/gate.sh
 mise exec -- ./scripts/dev.sh
 ```
 
 Use `mise exec -- <command>` for the commands below when the pinned tools are
-not already on PATH. Setup installs locked dependencies and Chromium; verify
-runs OpenAPI lint, Zig formatting and the full backend suite, frontend unit
-tests, the mocked E2E suite, and the live full-stack E2E suite. Stop the dev
-server first: verification needs port 3000 and always starts a fresh
+not already on PATH. Setup installs locked dependencies and Chromium. The
+gate (`scripts/gate.sh`; its header lists the steps) checks tool versions,
+lints the contract, runs Zig formatting and the full backend suite, frontend
+unit tests with coverage, the mocked E2E suite, the live full-stack E2E
+suite, and the perf snapshot. It needs `jq` and `lsof`, skips perf when `oha`
+is missing, and `GATE_SKIP="e2e-live perf"` leaves named steps out. Stop the
+dev server first: the gate needs port 3000 free and always starts a fresh
 frontend; the live suite takes 8081 and 3100. Neither command modifies
 `api/data.json`.
 See `docs/setup.md` for Linux prerequisites and machine migration.

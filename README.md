@@ -34,6 +34,8 @@ Deferred: cross-pursuit plans, resources, and renewals (issues #26, #25,
 - [Bun](https://bun.sh/) **1.3.14** (frontend)
 - [mise](https://mise.jdx.dev/getting-started.html) manages the versions pinned
   in `mise.toml`. macOS and Playwright-supported Ubuntu/Debian are supported.
+- For the gate: `jq` and `lsof` (on macOS by default), and `oha` for its perf
+  step.
 
 ## Fresh machine setup
 
@@ -43,11 +45,11 @@ Install mise, clone this repository, then run from its root:
 mise trust
 mise install
 mise exec -- ./scripts/setup.sh
-mise exec -- ./scripts/verify.sh
+mise exec -- ./scripts/gate.sh
 mise exec -- ./scripts/dev.sh
 ```
 
-Setup installs locked dependencies and Chromium; verification runs every gate
+Setup installs locked dependencies and Chromium; the gate runs every check
 and needs port 3000 free. Linux prerequisites, troubleshooting, and moving
 live data between machines: [docs/setup.md](docs/setup.md).
 

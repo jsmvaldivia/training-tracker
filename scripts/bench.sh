@@ -27,68 +27,36 @@ set -euo pipefail
 # store arena keeps every mutation until restart (store.zig, `list` doc);
 # that is the baseline the SQLite migration should lower. Idle RSS carries
 # ~1.1 MiB of fixed per-connection stack buffers from main.zig, by design.
-#
-# Runnable from anywhere — resolves paths relative to the repo root.
 cd "$(dirname "$0")/.."
+. scripts/lib.sh
 
 PORT="${PORT:-8086}"
 REQUESTS="${BENCH_REQUESTS:-2000}"
 JSON=0
 [[ "${1:-}" == "--json" ]] && JSON=1
 
-for tool in zig oha curl jq python3 ps; do
-  command -v "$tool" >/dev/null || { echo "error: $tool is required" >&2; exit 2; }
-done
-if lsof -i ":$PORT" -sTCP:LISTEN -n -P >/dev/null 2>&1; then
-  echo "error: port $PORT is held; set PORT to a free one" >&2
-  exit 2
-fi
-
-scratch_dir="$(mktemp -d "${TMPDIR:-/tmp}/tt-bench.XXXXXX")"
-scratch="$scratch_dir/data.json"
-cp api/data.seed.json "$scratch"
-pid=""
-cleanup() {
-  local status=$?
-  [[ -n "$pid" ]] && { kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; }
-  rm -rf "$scratch_dir"
-  exit "$status"
-}
-trap cleanup EXIT INT TERM
+require_tools zig oha curl jq python3 ps lsof
+require_port_free "$PORT" "set PORT to a free one"
+scratch_store bench
 
 now_ns() { python3 -c 'import time; print(time.time_ns())'; }
 rss_kb() { ps -o rss= -p "$1" | tr -d ' '; }
 file_size() { stat -f%z "$1" 2>/dev/null || stat -c%s "$1"; }
 
 (cd api && zig build -Doptimize=ReleaseSafe) >&2
-binary=api/zig-out/bin/training-tracker
-binary_bytes=$(file_size "$binary")
+binary_bytes=$(file_size api/zig-out/bin/training-tracker)
 
 # ---- startup: wall time from spawn to the first /health 200 ------------------
 # Three starts; the first pays the page-in of a freshly built binary (~150 ms
 # on macOS versus ~20 ms warm) and every gate run builds fresh, so it is kept
 # as startup_cold_ms for information and the best of three is the metric.
-start_api() {
-  PORT="$PORT" DATA_PATH="$scratch" "$binary" > "$scratch_dir/api.log" 2>&1 &
-  pid=$!
-  for _ in $(seq 1 300); do
-    if curl -sf "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then return 0; fi
-    kill -0 "$pid" 2>/dev/null || { echo "error: API exited during startup" >&2; cat "$scratch_dir/api.log" >&2; return 1; }
-    sleep 0.01
-  done
-  echo "error: API not ready on :$PORT" >&2
-  return 1
-}
-stop_api() {
-  kill "$pid" 2>/dev/null || true
-  wait "$pid" 2>/dev/null || true
-  pid=""
-}
+# The 10 ms poll is the metric's resolution; keep it when touching lib.sh.
+WAIT_INTERVAL=0.01
 startup_wall_ms=""
 startup_cold_ms=""
 for attempt in 1 2 3; do
   t0=$(now_ns)
-  start_api
+  start_api "$PORT" "$scratch_dir/api.log"
   t1=$(now_ns)
   ms=$(( (t1 - t0) / 1000000 ))
   [[ $attempt -eq 1 ]] && startup_cold_ms=$ms
@@ -98,18 +66,18 @@ done
 # The server's own measure (store load → listen), from its log line.
 startup_store_ms=$(grep -o 'startup [0-9.]* ms' "$scratch_dir/api.log" | grep -o '[0-9.]*' | head -1)
 startup_store_ms="${startup_store_ms:-0}"
-rss_idle_kb=$(rss_kb "$pid")
+rss_idle_kb=$(rss_kb "$api_pid")
 
 # ---- read load ----------------------------------------------------------------
 oha --no-tui --output-format json -n "$REQUESTS" -c 16 --disable-keepalive \
   "http://127.0.0.1:$PORT/pursuits" > "$scratch_dir/read.json"
-rss_after_read_kb=$(rss_kb "$pid")
+rss_after_read_kb=$(rss_kb "$api_pid")
 
 # ---- write load ---------------------------------------------------------------
 oha --no-tui --output-format json -n "$REQUESTS" --disable-keepalive -c 1 \
   -m PATCH -H 'content-type: application/json' -d '{"state":"achieved"}' \
   "http://127.0.0.1:$PORT/pursuits/p_1/milestones/m_1" > "$scratch_dir/write.json"
-rss_after_write_kb=$(rss_kb "$pid")
+rss_after_write_kb=$(rss_kb "$api_pid")
 
 platform="$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"
 commit="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"

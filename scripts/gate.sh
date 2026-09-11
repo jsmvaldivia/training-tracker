@@ -1,29 +1,31 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# The local gate (issues #38, #12): every deterministic check, in order, one process.
-# Stops at the first failure and exits non-zero. Writes .gate/result.json so the
-# evaluator agent reads results instead of re-running commands. A step that
-# does not run is recorded as "skipped" with a reason — never as "passed".
+# The local gate (issues #38, #12): every deterministic check, in order, in one
+# process. Stops at the first failure and exits non-zero. Writes
+# .gate/result.json so the evaluator agent reads results instead of re-running
+# commands; a step that does not run is recorded as "skipped" with a reason,
+# never as "passed".
+#
+# Steps: tools (versions against mise.toml), deps (bun install), fmt (zig fmt),
+# oas-lint (Spectral), zig-test (the full Zig suite), unit-cov (bun test with
+# the coverage threshold), e2e (mocked Playwright), e2e-live (real API on a
+# scratch store), perf (scripts/perf-snapshot.sh; skipped when oha is absent).
 #
 # Usage: scripts/gate.sh
 #   GATE_SKIP="e2e perf"   skip named steps (recorded as skipped, not passed)
-#
-# Runnable from anywhere — resolves paths relative to the repo root.
 cd "$(dirname "$0")/.."
+. scripts/lib.sh
 
 OUT_DIR=".gate"
 RESULT="$OUT_DIR/result.json"
 STEPS_FILE="$OUT_DIR/steps.ndjson"
-PERF_SCRIPT="scripts/perf-snapshot.sh"   # created by issue #35
 TAIL_LINES=40
 
 mkdir -p "$OUT_DIR"
 : > "$STEPS_FILE"
 
-for tool in jq lsof python3; do
-  command -v "$tool" >/dev/null || { echo "error: $tool is required" >&2; exit 2; }
-done
+require_tools jq lsof python3
 
 failed=0
 skip_reason=""
@@ -111,33 +113,33 @@ if pgrep -f "zig build test" >/dev/null; then
   exit 2
 fi
 # Playwright starts its own server on :3000; a stale dev server would be reused.
-if lsof -i :3000 -sTCP:LISTEN -n -P >/dev/null 2>&1; then
-  echo "error: port 3000 is held; stop the dev server before running the gate" >&2
-  exit 2
-fi
+require_port_free 3000 "stop the dev server before running the gate"
 
 STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 export PLAYWRIGHT_HTML_OPEN=never   # never block on the HTML report server
 echo "gate: $(git rev-parse --abbrev-ref HEAD 2>/dev/null) @ $(git rev-parse --short HEAD 2>/dev/null)"
 
 # ---- steps, in order ---------------------------------------------------------
+run_step tools      .    scripts/check-tools.sh
 # Worktrees start without node_modules; frozen install is a no-op when warm.
 run_step deps       web  bun install --frozen-lockfile
 run_step fmt        api  zig fmt --check .
 run_step oas-lint   .    scripts/validate-oas.sh
 run_step zig-test   api  zig build test -j1
 run_step unit-cov   web  bun run test:unit
-run_step e2e        web  bun run test:e2e
+# The dev server reads PORT; pin it so a value exported by an IDE preview
+# runner cannot move it off :3000, where Playwright waits.
+run_step e2e        web  env PORT=3000 bun run test:e2e
 run_step e2e-live   .    scripts/e2e-live.sh
 
 if (( failed )); then
   skip_step perf "earlier step failed: $skip_reason"
 elif skipped_by_env perf; then
   skip_step perf "skipped by GATE_SKIP"
-elif [[ -x "$PERF_SCRIPT" ]]; then
-  run_step perf . "$PERF_SCRIPT"
+elif ! command -v oha >/dev/null; then
+  skip_step perf "oha is not installed"
 else
-  skip_step perf "no perf instrumentation yet (issue #35)"
+  run_step perf . scripts/perf-snapshot.sh
 fi
 
 finish

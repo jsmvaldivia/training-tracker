@@ -3,7 +3,7 @@ set -euo pipefail
 
 # One-command local dev: starts the Zig API (:8080) and the web dev server
 # (:3000, proxying /api -> :8080) together, then shuts both down cleanly on
-# Ctrl-C. Runnable from anywhere — resolves paths relative to the repo root.
+# Ctrl-C.
 cd "$(dirname "$0")/.."
 
 # Bash job control puts each background command and its descendants in a
