@@ -14,8 +14,11 @@ on:
       - "api/.spectral.yaml"
       - "scripts/validate-oas.sh"
       - "scripts/gate.sh"
+      - "scripts/lib.sh"
+      - "scripts/check-tools.sh"
       - "mise.toml"
       - ".github/workflows/frontend.yml"
+      - ".github/actions/setup/**"
   pull_request:
     branches: [main]
     paths-ignore:
@@ -24,8 +27,11 @@ on:
       - "api/.spectral.yaml"
       - "scripts/validate-oas.sh"
       - "scripts/gate.sh"
+      - "scripts/lib.sh"
+      - "scripts/check-tools.sh"
       - "mise.toml"
       - ".github/workflows/frontend.yml"
+      - ".github/actions/setup/**"
 
 permissions:
   contents: read

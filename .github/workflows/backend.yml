@@ -10,17 +10,23 @@ on:
     paths:
       - "api/**"
       - "scripts/gate.sh"
+      - "scripts/lib.sh"
+      - "scripts/check-tools.sh"
       - "scripts/validate-oas.sh"
       - "mise.toml"
       - ".github/workflows/backend.yml"
+      - ".github/actions/setup/**"
   pull_request:
     branches: [main]
     paths:
       - "api/**"
       - "scripts/gate.sh"
+      - "scripts/lib.sh"
+      - "scripts/check-tools.sh"
       - "scripts/validate-oas.sh"
       - "mise.toml"
       - ".github/workflows/backend.yml"
+      - ".github/actions/setup/**"
 
 permissions:
   contents: read
@@ -32,19 +38,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
 
-      # Zig (and Bun, for the Spectral lint) come from mise.toml — the one pin.
-      - uses: jdx/mise-action@v4
-        with:
-          cache: true
-
-      - name: Cache Zig build artifacts
-        uses: actions/cache@v6
-        with:
-          path: api/.zig-cache
-          key: zig-cache-${{ runner.os }}-${{ hashFiles('mise.toml', 'api/build.zig', 'api/build.zig.zon') }}
-
-      # deps (bun install, for Spectral), fmt, oas-lint, zig-test.
+      # The gate's deps step installs Bun packages for the Spectral lint.
       - name: Run the backend gate
         run: scripts/gate.sh
         env:

@@ -34,15 +34,12 @@ request administrator privileges; setup does not run it automatically:
 mise exec -- bun web/node_modules/@playwright/test/cli.js install-deps chromium
 ```
 
-Then `mise exec -- ./scripts/verify.sh` and `mise exec -- ./scripts/dev.sh`.
+Then `mise exec -- ./scripts/gate.sh` and `mise exec -- ./scripts/dev.sh`.
 What they run, the ports they need, and the serial-test rule are in
-`AGENTS.md`, "Setup and verification".
-
-When changing setup or supervision scripts, run their socket-free regression
-checks with `mise exec -- bun scripts/test-tooling.mjs`. They exercise temporary
-fixtures under `/bin/bash`; `TEST_BASH` can select another Bash installation.
-The application, validator, and Playwright commands use Bun explicitly and do
-not require a separate Node installation.
+`AGENTS.md`, "Setup and verification". The gate needs `jq` and `lsof`; on
+Ubuntu/Debian, `apt install jq lsof`. The application, validator, and
+Playwright commands use Bun explicitly and do not require a separate Node
+installation.
 
 ## Agent setup checklist
 
@@ -89,8 +86,8 @@ your pursuits and milestones are present. Tests must never use the live file.
 - **Browser download fails:** allow the download hosts named in Playwright's
   error (including `cdn.playwright.dev`) and rerun setup. On Linux, missing
   shared-library errors require the `install-deps chromium` step above.
-- **Port 3000 unavailable:** stop its existing server and rerun verification.
-  Verification never reuses a running development server.
+- **Port 3000 unavailable:** stop its existing server and rerun the gate. It
+  never reuses a running development server.
 
 References: [mise configuration](https://mise.jdx.dev/configuration.html),
 [Bun frozen installs](https://bun.sh/docs/pm/cli/install), and

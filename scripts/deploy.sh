@@ -15,8 +15,9 @@ set -euo pipefail
 # Reads the pursuit count, applies deploy/k8s with the image tag set in a
 # throwaway overlay (the tracked kustomization stays untouched), waits for
 # the rollout, then fails unless GET /api/health returns 200 and the count is
-# unchanged. Runnable from anywhere; resolves paths relative to the repo root.
+# unchanged.
 cd "$(dirname "$0")/.."
+. scripts/lib.sh
 
 version="${1:-}"
 [[ -n "$version" ]] || { echo "usage: scripts/deploy.sh v<version>" >&2; exit 2; }
@@ -26,9 +27,7 @@ namespace=training-tracker
 image=ghcr.io/jsmvaldivia/training-tracker
 TIMEOUT="${TIMEOUT:-120}"
 
-for tool in kubectl curl jq; do
-  command -v "$tool" >/dev/null || { echo "error: $tool is required" >&2; exit 2; }
-done
+require_tools kubectl curl jq
 
 kube=(kubectl)
 if [[ -n "${KUBE_CONTEXT:-}" ]]; then

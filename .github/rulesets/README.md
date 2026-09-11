@@ -2,7 +2,9 @@
 
 `main.json` is the repository ruleset `main` (id 22219490) as it should be,
 in the shape the GitHub REST API accepts. It is the source of truth for the
-setting: the live ruleset is applied from this file, never edited by hand.
+setting: apply it with the command below rather than editing the ruleset on
+github.com, and check what is live before assuming the file is applied
+(issue #19 tracks the gap).
 
 What it enforces on `main`:
 

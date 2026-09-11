@@ -1,5 +1,5 @@
 # Schemathesis configuration for the contract job (issue #36, .github/workflows/contract.yml).
-# Run from the repo root: uvx schemathesis run api/openapi.yaml --url http://127.0.0.1:8080
+# Run from the repo root by scripts/contract-test.sh, which starts the API on a scratch store (PORT, default 8085) and passes --url.
 
 [[operations]]
 # GET /pursuits ignores query keys the contract does not name (`?sort=x` is

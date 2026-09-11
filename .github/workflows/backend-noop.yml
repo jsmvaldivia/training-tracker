@@ -11,17 +11,23 @@ on:
     paths-ignore:
       - "api/**"
       - "scripts/gate.sh"
+      - "scripts/lib.sh"
+      - "scripts/check-tools.sh"
       - "scripts/validate-oas.sh"
       - "mise.toml"
       - ".github/workflows/backend.yml"
+      - ".github/actions/setup/**"
   pull_request:
     branches: [main]
     paths-ignore:
       - "api/**"
       - "scripts/gate.sh"
+      - "scripts/lib.sh"
+      - "scripts/check-tools.sh"
       - "scripts/validate-oas.sh"
       - "mise.toml"
       - ".github/workflows/backend.yml"
+      - ".github/actions/setup/**"
 
 permissions:
   contents: read

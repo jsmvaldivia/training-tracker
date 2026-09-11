@@ -1,0 +1,32 @@
+# Toolchain for every job: Zig and Bun from mise.toml (the one pin), the Zig
+# build cache, and on request the web dependencies and Chromium.
+name: setup
+description: mise-pinned toolchain, Zig build cache, optional web deps and Chromium
+inputs:
+  web:
+    description: Install web dependencies and Chromium
+    required: false
+    default: "false"
+  zig-cache:
+    description: Restore and save api/.zig-cache
+    required: false
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - uses: jdx/mise-action@v4
+      with:
+        cache: true
+
+    - if: inputs.zig-cache == 'true'
+      uses: actions/cache@v6
+      with:
+        path: api/.zig-cache
+        key: zig-cache-${{ runner.os }}-${{ hashFiles('mise.toml', 'api/build.zig', 'api/build.zig.zon') }}
+
+    - if: inputs.web == 'true'
+      shell: bash
+      working-directory: web
+      run: |
+        bun install --frozen-lockfile
+        bun node_modules/@playwright/test/cli.js install --with-deps chromium
