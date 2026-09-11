@@ -17,10 +17,12 @@ mise exec -- ./scripts/dev.sh
 ```
 
 Use `mise exec -- <command>` for the commands below when the pinned tools are
-not already on PATH. Setup installs locked dependencies and Chromium; verify
-runs OpenAPI lint, Zig formatting and the full backend suite, frontend unit
-tests, the mocked E2E suite, and the live full-stack E2E suite. Stop the dev
-server first: verification needs port 3000 and always starts a fresh
+not already on PATH. Use it only for commands that need Zig or Bun; run `git`,
+`gh`, `grep`, `ls`, and other system tools without it, so command-rewriting
+hooks can see the tool name. Setup installs locked dependencies and Chromium;
+verify runs OpenAPI lint, Zig formatting and the full backend suite, frontend
+unit tests, the mocked E2E suite, and the live full-stack E2E suite. Stop the
+dev server first: verification needs port 3000 and always starts a fresh
 frontend; the live suite takes 8081 and 3100. Neither command modifies
 `api/data.json`.
 See `docs/setup.md` for Linux prerequisites and machine migration.
