@@ -1,0 +1,71 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "01M26ZGR7B14V5DNKRGEFHFYTD",
+  "session_id": "b0aab825-fc6d-4bc1-96a1-262bed096160",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-11T00:57:41.06777Z",
+  "branch": "main",
+  "checkpoints_count": 3,
+  "save_step_count": 1,
+  "files_touched": [
+    "AGENTS.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-4-5-20250929",
+  "turn_id": "16a8da2f5908",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 352,
+    "cache_creation_tokens": 92206,
+    "cache_read_tokens": 951933,
+    "output_tokens": 10507,
+    "api_call_count": 16
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-11T00:57:41.05284Z",
+    "agent_lines": 0,
+    "agent_removed": 1,
+    "human_added": 0,
+    "human_modified": 4,
+    "human_removed": 0,
+    "total_committed": 3,
+    "total_lines_changed": 5,
+    "agent_percentage": 20,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 322,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.json": 84,
+        ".codex/agents/oas-designer.toml": 4,
+        ".codex/agents/resource-implementer.toml": 4,
+        ".codex/hooks.json": 88,
+        "docs/reviews/slop-audit-2026-09-05.md": 142
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 180,
+      "user_lines_removed": 1,
+      "agent_lines_added": 146,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".claude/settings.json": 84,
+        ".codex/agents/oas-designer.toml": 4,
+        ".codex/agents/resource-implementer.toml": 4,
+        ".codex/hooks.json": 88
+      },
+      "user_removed_per_file": {
+        ".agents/skills": 1
+      }
+    }
+  ]
+}
