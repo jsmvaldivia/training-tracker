@@ -4,7 +4,7 @@
 
 ## Claude Code specifics
 
-- Subagents live in `.claude/agents/`: `oas-designer` (designs the contract,
-  writes no code) and `resource-implementer` (TDDs one backend resource per
-  instance, never edits the spec). Use them in that order for new resources.
+- The subagents, the `resolve-issue` skill, and the rules they share are in
+  `AGENTS.md`, "Workflow agents". For a new resource: `oas-designer` first,
+  then `resource-implementer`.
 - Ground answers about the domain in `docs/glossary/index.md`.

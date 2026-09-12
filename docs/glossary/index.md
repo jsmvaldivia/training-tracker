@@ -24,9 +24,9 @@ Map of project knowledge. One line per entry; content lives in the topic pages.
 - [evaluator](architecture.md#evaluator-agent) — agent: runs the gate, judges the diff, PASS or FAIL with findings
 - [resolve-issue](architecture.md#resolve-issue-skill--workflow) — skill + workflow: `/resolve-issue N`, issue to PR
 - [Project board](architecture.md#project-board) — GitHub project 3: In Progress from the skill, Done from the built-in workflow
-- [ADR 0001: container deployment](../adr/0001-container-deployment.md) — prod is one image as one Pod on the home k3s cluster (Raspberry Pis, LAN only): Bun on :3000 behind NodePort 30300 proxying to the API on localhost, store on a local-path PVC at /data
+- [ADR 0001: container deployment](../adr/0001-container-deployment.md) — prod is one image, one Pod on the home k3s cluster, LAN only
 - [gate.sh](architecture.md#gatesh-script) — script: all deterministic checks, writes `.gate/result.json`
 - [coverage gate](architecture.md#coverage-gate) — Bun threshold for web, diff rule for api
 
 ## Open discrepancies
-- [discrepancies.md](discrepancies.md) — code-vs-intent conflicts, adjudicated (three logged)
+- [discrepancies.md](discrepancies.md) — code-vs-intent conflicts, adjudicated

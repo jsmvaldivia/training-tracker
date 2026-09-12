@@ -31,8 +31,8 @@ The image, built from the repository's `Dockerfile`:
   `api/data.seed.json` on the first start only;
 - published by the release workflow to GHCR as
   `ghcr.io/jsmvaldivia/training-tracker:<version>` for `linux/amd64` and
-  `linux/arm64` (the arm64 half is issue #57). The package is public, so the
-  cluster pulls it without a secret.
+  `linux/arm64`. The package is public, so the cluster pulls it without a
+  secret.
 
 The cluster side (`deploy/k8s`, plain manifests with a `kustomization.yaml`,
 namespace `training-tracker`; issue #18):
@@ -94,5 +94,3 @@ shape that runs the image unchanged.
 - Nothing in the app checks who is calling. Any device on the LAN can read
   and write the store. Moving the boundary (Tailscale, a public host)
   requires an access layer first.
-- `AGENTS.md`'s "two environments" note stays accurate: local is the dev
-  Mac, prod is the cluster.
